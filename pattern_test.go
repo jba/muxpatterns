@@ -2,6 +2,7 @@ package muxpatterns
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
 	"strings"
 	"testing"
@@ -104,6 +105,7 @@ func TestParseError(t *testing.T) {
 		{"//", "empty path segment"},
 		{"GET a.com/foo//", "empty path segment"},
 		{"/{w}x", "bad wildcard segment"},
+		{"/x{w}", "bad wildcard segment"},
 		{"/{wx", "bad wildcard segment"},
 		{"/{a$}", "bad wildcard name"},
 		{"/{}", "bad wildcard name"},
@@ -116,7 +118,7 @@ func TestParseError(t *testing.T) {
 	} {
 		_, err := Parse(test.in)
 		if err == nil || !strings.Contains(err.Error(), test.contains) {
-			t.Errorf("%q:\ngot %q, want error containing %q", test.in, err, test.contains)
+			t.Errorf("%q:\ngot %v, want error containing %q", test.in, err, test.contains)
 		}
 	}
 }
@@ -239,6 +241,16 @@ func TestMatch(t *testing.T) {
 			pattern:   "/foo/bar/{$}",
 			wantMatch: true,
 		},
+		{
+			path:      "/a",
+			pattern:   "/{$}",
+			wantMatch: false,
+		},
+		{
+			path:      "/a/",
+			pattern:   "/a",
+			wantMatch: false,
+		},
 	} {
 		t.Run(fmt.Sprintf("%s,%s,%s", test.method, test.host, test.path), func(t *testing.T) {
 			pat, err := Parse(test.pattern)
@@ -251,6 +263,185 @@ func TestMatch(t *testing.T) {
 			}
 			if g, w := gotMatches, test.wantMatches; !reflect.DeepEqual(g, w) {
 				t.Errorf("matches: got %#v, want %#v", g, w)
+			}
+		})
+	}
+}
+
+func TestLiteralPrefixLen(t *testing.T) {
+	for _, test := range []struct {
+		pattern string
+		want    int
+	}{
+		{"/", 1},
+		{"/{x}", 1},
+		{"/{$}", 1},
+		{"/a", 2},
+		{"/abc", 4},
+		{"/a/bc", 5},
+		{"/a/bc/{x}", 6},
+		{"/a/b/{$}", 5},
+		{"/{x}/{y}", 1},
+		{"/{x}/a", 1},
+	} {
+		p, err := Parse(test.pattern)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := p.literalPrefixLen()
+		if got != test.want {
+			t.Errorf("%q: got %d, want %d", test.pattern, got, test.want)
+		}
+	}
+}
+
+func TestMoreSpecificThan(t *testing.T) {
+	for _, test := range []struct {
+		p1, p2 string
+		want   bool
+	}{
+		// 1. host
+		{"h/", "/", true},
+		{"/", "h/", false},
+		{"h/", "h/", false},
+
+		// 2. method
+		{"GET /", "/", true},
+		{"/", "GET /", false},
+		{"GET /", "POST /", false},
+
+		// 3. literal prefix
+		{"/", "/", false},
+		{"/a", "/", true},
+		{"/", "/a", false},
+		{"/a", "/a", false},
+		{"/a/", "/a", true},
+		{"/a", "/a/", false},
+		{"/a", "/a/{x}", false},
+		{"/a/{x}", "/a", true},
+		{"/a/{x}", "/a/{x}", false},
+		{"/a/{x...}", "/a/{x}", false},
+		{"/a/bc", "/a/b", true},
+		{"/a/b", "/a/bc", false},
+
+		// 4. {$}
+		{"/{$}", "/", true},
+		{"/", "/$", false},
+		{"/a/{x}/{$}", "/a/{x}/", true},
+		{"/a/{x}/", "/a/{x}/{$}", false},
+		{"/a/b/", "/a/{x}/{$}", true},
+		{"/a/{x}/{$}", "/a/b/", false},
+		{"/a/{$}", "/b/{$}", false},
+
+		// false
+		{"/{x}/{y}", "/{x}/a", false},
+	} {
+		pat1, err := Parse(test.p1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pat2, err := Parse(test.p2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := pat1.MoreSpecificThan(pat2)
+		if got != test.want {
+			t.Errorf("%q.MoreSpecificThan(%q) = %t, want %t",
+				test.p1, test.p2, got, test.want)
+		}
+	}
+}
+
+func TestConflictsWith(t *testing.T) {
+	for _, test := range []struct {
+		p1, p2 string
+		want   bool
+	}{
+		{"/a", "/a", true},
+		{"/a", "/ab", false},
+		{"/a/b/cd", "/a/b/cd", true},
+		{"/a/b/cd", "/a/b/c", false},
+		{"/a/b/c", "/a/c/c", false},
+		{"/{x}", "/{y}", true},
+		{"/{x}", "/a", false}, // more specific
+		{"/{x}/{y}", "/{x}/a", true},
+		{"/{x}/{y}", "/{x}/a/b", false},
+		{"/{x}", "/a/{y}", false}, // more specific
+		{"/{x}/{y}", "/{x}/a/", false},
+		{"/{x}", "/a/{y...}", false},           // more specific
+		{"/{x}/a/{y}", "/{x}/a/{y...}", false}, // more specific
+		{"/{x}/{y}", "/{x}/a/{$}", false},      // more specific
+		{"/{x}/{y}/{$}", "/{x}/a/{$}", true},
+	} {
+		pat1, err := Parse(test.p1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pat2, err := Parse(test.p2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := pat1.ConflictsWith(pat2)
+		if got != test.want {
+			t.Errorf("%q.ConflictsWith(%q) = %t, want %t",
+				test.p1, test.p2, got, test.want)
+		}
+		// ConflictsWith should be commutative.
+		got = pat2.ConflictsWith(pat1)
+		if got != test.want {
+			t.Errorf("%q.ConflictsWith(%q) = %t, want %t",
+				test.p2, test.p1, got, test.want)
+		}
+	}
+}
+
+func TestPatternSetMatch(t *testing.T) {
+	var ps PatternSet
+	for _, p := range []string{
+		"/item/",
+		"POST /item/{user}",
+		"/item/{user}",
+		"/item/{user}/{id}",
+		"/item/{$}",
+		"POST alt.com/item/{userp}",
+	} {
+		pat, err := Parse(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ps.Register(pat); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, test := range []struct {
+		method, host, path string
+		want               map[string]any // nil -> no match, empty -> match
+	}{
+		{"GET", "", "/item/jba", map[string]any{"user": "jba"}},
+		{"POST", "", "/item/jba/17", map[string]any{"user": "jba", "id": "17"}},
+		{"GET", "", "/item/", map[string]any{}},
+		{"GET", "", "/item/jba/17/line2", map[string]any{}},
+		{"POST", "alt.com", "/item/jba", map[string]any{"userp": "jba"}},
+		{"GET", "alt.com", "/item/jba", map[string]any{"user": "jba"}},
+		{"GET", "", "/item", nil},
+	} {
+		if test.host == "" {
+			test.host = "example.com"
+		}
+		t.Run(fmt.Sprintf("%s,%s,%s", test.method, test.host, test.path), func(t *testing.T) {
+			p, got, err := ps.Match(test.method, test.host, test.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p == nil {
+				if test.want != nil {
+					t.Error("got no match, wanted match")
+				}
+				return
+			}
+			if !maps.Equal(got, test.want) {
+				t.Errorf("got %v\nwant %v", got, test.want)
 			}
 		})
 	}

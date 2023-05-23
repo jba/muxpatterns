@@ -76,6 +76,10 @@ func (s segment) String() string {
 	return "{" + s.s + dots + "}"
 }
 
+func (s segment) isDollar() bool {
+	return s.wild && s.s == "$"
+}
+
 // TODO(jba): fail if anything comes after {$}
 
 // Parse parses a string into a Pattern.
@@ -128,6 +132,9 @@ func Parse(s string) (*Pattern, error) {
 		var seg segment
 		if first[0] != '{' {
 			// literal
+			if strings.IndexByte(first, '{') > 0 {
+				return nil, fmt.Errorf("bad wildcard segment %q", first)
+			}
 			seg = segment{wild: false, s: first}
 		} else {
 			// wildcard
@@ -229,7 +236,7 @@ func (p *Pattern) Match(method, host, path string) (bool, []string) {
 		// Get next path segment.
 		var rs string
 		rs, rest, trailingSlash = strings.Cut(rest, "/")
-		if ps.wild {
+		if ps.wild && ps.s != "$" {
 			matches = append(matches, rs)
 			i++
 			continue
@@ -241,6 +248,9 @@ func (p *Pattern) Match(method, host, path string) (bool, []string) {
 		i++
 	}
 	if i == len(p.segments) {
+		if trailingSlash {
+			return false, nil
+		}
 		return true, matches
 	}
 	// {$} and {...} match a trailing slash.
@@ -259,24 +269,131 @@ func (p *Pattern) Match(method, host, path string) (bool, []string) {
 	return false, nil
 }
 
+// MoreSpecificThan reports whether p1 is more specific than p2, as defined
+// by these rules:
+//
+//  1. Patterns with a host win over patterns without a host.
+//  2. Patterns with a method win over patterns without a method.
+//  3. Patterns with a longer literal (non-wildcard) prefix win over patterns
+//     with shorter ones.
+//  4. Patterns that don't end in a multi win over patterns that do.
+//
+// MoreSpecificThan is not a order on patterns:
+// it may be that neither of two patterns is more specific than the other.
+func (p1 *Pattern) MoreSpecificThan(p2 *Pattern) bool {
+	// 1. Patterns with a host win over patterns without a host.
+	if (p1.host == "") != (p2.host == "") {
+		return p1.host != ""
+	}
+	// 2. Patterns with a method win over patterns without a method.
+	if (p1.method == "") != (p2.method == "") {
+		return p1.method != ""
+	}
+	// 3. Patterns with a longer literal (non-wildcard) prefix win over patterns
+	// with shorter ones.
+	if l1, l2 := p1.literalPrefixLen(), p2.literalPrefixLen(); l1 != l2 {
+		return l1 > l2
+	}
+	//  4. Patterns that don't end in a multi win over patterns that do.
+	if m1, m2 := p1.lastSeg().multi, p2.lastSeg().multi; m1 != m2 {
+		return m2
+	}
+	return false
+}
+
+func (p *Pattern) literalPrefixLen() int {
+	n := 0
+	for _, s := range p.segments {
+		if s.wild {
+			return n + 1 // for final slash
+		}
+		n += 1 + len(s.s) // +1 for preceding slash
+	}
+	return n
+}
+
+func (p *Pattern) lastSeg() segment {
+	return p.segments[len(p.segments)-1]
+}
+
+// ConflictsWith reports whether p1 conflicts with p2, that is, whether
+// there is a request that both match but where p1 is not more specific than p2.
+func (p1 *Pattern) ConflictsWith(p2 *Pattern) bool {
+	if p1.host != p2.host {
+		// Either one host is empty and the other isn't, in which case the
+		// one with the host is more specific by rule 1, or neither host is empty
+		// and they differ, so they won't match the same paths.
+		return false
+	}
+	if p1.method != p2.method {
+		// Same reasoning as above, with rule 2.
+		return false
+	}
+	if p1.MoreSpecificThan(p2) || p2.MoreSpecificThan(p1) {
+		return false
+	}
+
+	// Make p1 the one with fewer segments.
+	if len(p1.segments) > len(p2.segments) {
+		p1, p2 = p2, p1
+	}
+
+	for i, s1 := range p1.segments {
+		s2 := p2.segments[i]
+		// If corresponding literal segments differ, there is no overlap.
+		if !s1.wild && !s2.wild && s1.s != s2.s {
+			return false
+		}
+		// The {$} matches only paths ending in '/', and literals and ordinary wildcards do not match '/'.
+	}
+	if len(p1.segments) == len(p2.segments) {
+		// Both patterns have the same number of segments.
+		// We haven't ruled out overlap, meaning that each pair of corresponding
+		// segments is either the same literal, or at least one is a wildcard.
+		// The only case where they don't overlap is where one final segment is {$} and the other is not a multi.
+		s1 := p1.lastSeg()
+		s2 := p2.lastSeg()
+		if s1.isDollar() && s2.isDollar() {
+			return true
+		}
+		if (s1.isDollar() && !s2.multi) || (s2.isDollar() && !s1.multi) {
+			return false
+		}
+		return true
+	}
+	// p2 has more segments than p1.
+	// If the last segment of p1 is a multi, it matches the rest of p2, so there is
+	// overlap.
+	// Otherwise, there isn't: the last segment of p1 is either {$}, in which case it
+	// doesn't match the corresponding segment of p2 (which is not {$} or {...}), or
+	// it is a literal or ordinary wildcard, which means there is at least one more segment
+	// of p2 that it doesn't match.
+	return p1.segments[len(p1.segments)-1].multi
+}
+
 // A PatternSet is a set of non-conflicting patterns.
+// The zero value is an empty PatternSet, ready for use.
 type PatternSet struct {
 	mu       sync.Mutex
 	patterns []*Pattern
 }
 
+// Register adds a Pattern to the set. If returns an error
+// if the pattern conflicts with an existing pattern in the set.
 func (s *PatternSet) Register(p *Pattern) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, q := range s.patterns {
-		if p.conflictsWith(q) {
-			return fmt.Errorf("conflicting patterns %s and %s", q, p)
+		if p.ConflictsWith(q) {
+			return fmt.Errorf("new pattern %s conflicts with existing pattern %s", p, q)
 		}
 	}
 	s.patterns = append(s.patterns, p)
 	return nil
 }
 
+// MatchRequest matches an http.Request against the set of patterns, returning
+// the matching pattern and a map from wildcard to matching path segment.
 func (s *PatternSet) MatchRequest(req *http.Request) (*Pattern, map[string]any, error) {
 	return s.Match(req.Method, req.URL.Host, req.URL.Path)
 }
@@ -284,214 +401,36 @@ func (s *PatternSet) MatchRequest(req *http.Request) (*Pattern, map[string]any, 
 func (s *PatternSet) Match(method, host, path string) (*Pattern, map[string]any, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// var (
-	// 	best    *Pattern
-	// 	matches []string
-	// )
-	return nil, nil, nil
-	// for _, p := range s.patterns {
-	// 	if ok, ms := p.Match(method, host, path); ok {
-	// 		if p.BetterMatchThan(best) {
-	// 			best = p
-	// 			matches = ms
-	// 		}
-	// 	}
-	// }
-	// if best == nil {
-	// 	return nil, nil, nil
-	// }
-	// bindings, err := best.bind(matches)
-	// return best, bindings, err
+	var (
+		best    *Pattern
+		matches []string
+	)
+	for _, p := range s.patterns {
+		if ok, ms := p.Match(method, host, path); ok {
+			if best == nil || p.MoreSpecificThan(best) {
+				best = p
+				matches = ms
+			}
+		}
+	}
+	if best == nil {
+		return nil, nil, nil
+	}
+	bindings, err := best.bind(matches)
+	return best, bindings, err
 }
-
-// 	if !strings.HasPrefix(path, "/") {
-// 		panic("non-absolute path")
-// 	}
-// 	var ms []string
-// 	for _, seg := range segs {
-// 		if !seg.wild {
-// 			if !strings.HasPrefix(path, seg.s) {
-// 				return false, nil
-// 			}
-// 			path = path[len(seg.s):]
-// 		} else if seg.multi {
-// 			// Match the rest of path.
-// 			if seg.s != "" {
-// 				// Remove the initial slash, because it's unexpected.
-// 				// That means there's no way to tell if "/a/{...}"
-// 				// matched "/a" or "/a/".
-// 				ms = append(ms, strings.TrimPrefix(path, "/"))
-// 			}
-// 			return true, ms
-// 		} else {
-// 			i := strings.IndexByte(path, '/')
-// 			if i < 0 {
-// 				i = len(path)
-// 			}
-// 			if seg.s != "" {
-// 				ms = append(ms, path[:i])
-// 			}
-// 			path = path[i:]
-// 		}
-// 	}
-// 	return true, ms
-// }
 
 // bind returns a map from wildcard names to matched, decoded values.
 // matches is a list of matched substrings in the order that non-empty wildcards
 // appear in the Pattern.
-// func (p *Pattern) bind(matches []string) (map[string]any, error) {
-// 	bindings := map[string]any{}
-// 	i := 0
-// 	for _, seg := range p.path {
-// 		if seg.wild() && seg.s != "" {
-// 			decode, ok := types.Load(seg.typ)
-// 			if !ok {
-// 				// Should never happen, because we found the type during parsing and
-// 				// we never remove anything from types.
-// 				return nil, fmt.Errorf("internal error: decoder for type %q not found", seg.typ)
-// 			}
-// 			val, err := decode.(decoder)(matches[i])
-// 			if err != nil {
-// 				return nil, err
-// 			}
-// 			i++
-// 			bindings[seg.s] = val
-// 		}
-// 	}
-// 	return bindings, nil
-// }
-
-// func (p1 *Pattern) BetterMatchThan(p2 *Pattern) bool {
-// 	if p2 == nil {
-// 		return true
-// 	}
-// 	if p1 == nil {
-// 		return false
-// 	}
-// 	// 1. Patterns with a host win over patterns without a host.
-// 	if (p1.host == "") != (p2.host == "") {
-// 		return p1.host != ""
-// 	}
-// 	// 2. Patterns with a method win over patterns without a method.
-// 	if (p1.method == "") != (p2.method == "") {
-// 		return p1.method != ""
-// 	}
-// 	// 3. Patterns with a longer literal (non-wildcard) prefix win over patterns with shorter ones.
-// 	return p1.literalPrefixLen() > p2.literalPrefixLen()
-// }
-
-// func (p *Pattern) literalPrefixLen() int {
-// 	// Every path starts with a literal, unless it consists solely of a multi.
-// 	if p.path[0].wild() {
-// 		// multi, count 1 for the initial '/'
-// 		return 1
-// 	}
-// 	n := len(p.path[0].s)
-// 	if len(p.path) == 2 && p.path[1].multi {
-// 		// Add 1 for '/'
-// 		n++
-// 	}
-// 	return n
-// }
-
-// TODO: do these conflict?
-//		/a/b/
-//		/a/b/{$}
-// Yes, because they have the same literal prefix length and overlap on path "/a/b/".
-
-func (p1 *Pattern) conflictsWith(p2 *Pattern) bool {
-	if p1.host != p2.host {
-		// Either one host is empty and the other isn't, in which case the
-		// one with the host is better by rule 1, or neither host is empty
-		// and they differ, so they won't match the same paths.
-		return false
-	}
-	if p1.method != p2.method {
-		return false // By rule 2.
-	}
-	return false
-	// if p1.literalPrefixLen() != p2.literalPrefixLen() {
-	// 	return false // By rule 3.
-	// }
-	// return segsOverlap(p1.path, p2.path) != ""
-}
-
-// // segsOverlap returns a string matched by both segment lists, or "" if there is none.
-// func segsOverlap(segs1, segs2 []segment) string {
-// 	ov := strsOverlap(segsToString(segs1), segsToString(segs2))
-// 	if ov == "." {
-// 		return "/"
-// 	}
-// 	return strings.TrimSuffix(ov, ".")
-// }
-
-// func segsToString(segs []segment) string {
-// 	var b strings.Builder
-// 	for _, s := range segs {
-// 		if !s.wild() {
-// 			b.WriteString(s.s)
-// 		} else if s.multi {
-// 			b.WriteByte('.')
-// 		} else {
-// 			b.WriteByte('*')
-// 		}
-// 	}
-// 	return b.String()
-// }
-
-// s1 and s2 are from segsToString.
-// TODO: unicode, not bytes?
-// func strsOverlap(s1, s2 string) string {
-// 	var ov string
-// 	for {
-// 		i := mismatch(s1, s2) // Index of first byte that differs.
-// 		ov += s1[:i]          // Everything before that is part of the overlap.
-// 		s1 = s1[i:]           // Remove the common prefix.
-// 		s2 = s2[i:]
-// 		if s1 == "" && s2 == "" {
-// 			return ov
-// 		}
-// 		// Multi matches the rest.
-// 		if s1 == "." {
-// 			return ov + s2
-// 		}
-// 		if s2 == "." {
-// 			return ov + s1
-// 		}
-// 		if s1 == "" || s2 == "" {
-// 			// Remainder cannot be matched.
-// 			return ""
-// 		}
-// 		if s1[0] != '*' && s2[0] != '*' {
-// 			// Two literals, which must be different
-// 			// or they would have been in the common prefix.
-// 			return ""
-// 		}
-// 		// Exactly one wildcard. Make s1 have it.
-// 		if s2[0] == '*' {
-// 			s1, s2 = s2, s1
-// 		}
-// 		// s1's wildcard matches s2's first path element.
-// 		i = strings.IndexByte(s2, '/')
-// 		if i < 0 {
-// 			i = len(s2)
-// 		}
-// 		ov += s2[:i]
-// 		s1 = s1[1:]
-// 		s2 = s2[i:]
-// 	}
-// }
-
-// index of first byte that differs
-func mismatch(s1, s2 string) int {
-	if len(s1) > len(s2) {
-		s1, s2 = s2, s1
-	}
-	for i := 0; i < len(s1); i++ {
-		if s1[i] != s2[i] {
-			return i
+func (p *Pattern) bind(matches []string) (map[string]any, error) {
+	bindings := map[string]any{}
+	i := 0
+	for _, seg := range p.segments {
+		if seg.wild && seg.s != "" && seg.s != "$" {
+			bindings[seg.s] = matches[i]
+			i++
 		}
 	}
-	return len(s1)
+	return bindings, nil
 }
