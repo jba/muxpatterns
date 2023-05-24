@@ -29,59 +29,58 @@ func TestParse(t *testing.T) {
 		in   string
 		want Pattern
 	}{
-		{"/", Pattern{segments: []segment{multi("")}}},
+		{"/", Pattern{segments: []segment{lit("/"), multi("")}}},
+		{"/a", Pattern{segments: []segment{lit("/a")}}},
 		{
 			"/a/",
-			Pattern{segments: []segment{lit("a"), multi("")}},
+			Pattern{segments: []segment{lit("/a/"), multi("")}},
 		},
 		{"/path/to/something", Pattern{segments: []segment{
-			lit("path"),
-			lit("to"),
-			lit("something"),
+			lit("/path/to/something"),
 		}}},
 		{
 			"/{w1}/lit/{w2}",
 			Pattern{
-				segments: []segment{wild("w1"), lit("lit"), wild("w2")},
+				segments: []segment{lit("/"), wild("w1"), lit("/lit/"), wild("w2")},
 			},
 		},
 		{
 			"/{w1}/lit/{w2}/",
 			Pattern{
-				segments: []segment{wild("w1"), lit("lit"), wild("w2"), multi("")},
+				segments: []segment{lit("/"), wild("w1"), lit("/lit/"), wild("w2"), lit("/"), multi("")},
 			},
 		},
 		{
 			"example.com/",
-			Pattern{host: "example.com", segments: []segment{multi("")}},
+			Pattern{host: "example.com", segments: []segment{lit("/"), multi("")}},
 		},
 		{
 			"GET /",
-			Pattern{method: "GET", segments: []segment{multi("")}},
+			Pattern{method: "GET", segments: []segment{lit("/"), multi("")}},
 		},
 		{
 			"POST example.com/foo/{w}",
 			Pattern{
 				method:   "POST",
 				host:     "example.com",
-				segments: []segment{lit("foo"), wild("w")},
+				segments: []segment{lit("/foo/"), wild("w")},
 			},
 		},
 		{
 			"/{$}",
-			Pattern{segments: []segment{wild("$")}},
+			Pattern{segments: []segment{lit("/")}},
 		},
 		{
 			"DELETE example.com/{$}",
-			Pattern{method: "DELETE", host: "example.com", segments: []segment{wild("$")}},
+			Pattern{method: "DELETE", host: "example.com", segments: []segment{lit("/")}},
 		},
 		{
 			"/foo/{$}",
-			Pattern{segments: []segment{lit("foo"), wild("$")}},
+			Pattern{segments: []segment{lit("/foo/")}},
 		},
 		{
 			"/{a}/foo/{rest...}",
-			Pattern{segments: []segment{wild("a"), lit("foo"), multi("rest")}},
+			Pattern{segments: []segment{lit("/"), wild("a"), lit("/foo/"), multi("rest")}},
 		},
 	} {
 		got, err := Parse(test.in)
@@ -89,7 +88,7 @@ func TestParse(t *testing.T) {
 			t.Fatalf("%q: %v", test.in, err)
 		}
 		if !got.equal(&test.want) {
-			t.Errorf("%q:\ngot  %s\nwant %s", test.in, got, &test.want)
+			t.Errorf("%q:\ngot  %#v\nwant %#v", test.in, got, &test.want)
 		}
 	}
 }
@@ -108,13 +107,13 @@ func TestParseError(t *testing.T) {
 		{"/x{w}", "bad wildcard segment"},
 		{"/{wx", "bad wildcard segment"},
 		{"/{a$}", "bad wildcard name"},
-		{"/{}", "bad wildcard name"},
+		{"/{}", "empty wildcard"},
 		{"/{...}", "bad wildcard name"},
 		{"/{$...}", "bad wildcard"},
-		{"/{$}/", "must be at end"},
-		{"/{$}/x", "must be at end"},
-		{"/{a...}/", "must be at end"},
-		{"/{a...}/x", "must be at end"},
+		{"/{$}/", "{$} not at end"},
+		{"/{$}/x", "{$} not at end"},
+		{"/{a...}/", "not at end"},
+		{"/{a...}/x", "not at end"},
 	} {
 		_, err := Parse(test.in)
 		if err == nil || !strings.Contains(err.Error(), test.contains) {
@@ -164,6 +163,11 @@ func TestMatch(t *testing.T) {
 			path:      "/foo/bar/baz",
 			pattern:   "/foo/bar/baz",
 			wantMatch: true,
+		},
+		{
+			path:      "/foo/bar/baz",
+			pattern:   "/foo/bar",
+			wantMatch: false,
 		},
 		{
 			path:      "/foo/bar",
@@ -251,46 +255,23 @@ func TestMatch(t *testing.T) {
 			pattern:   "/a",
 			wantMatch: false,
 		},
+		{
+			path:      "/a/",
+			pattern:   "/a/{x}",
+			wantMatch: false,
+		},
 	} {
-		t.Run(fmt.Sprintf("%s,%s,%s", test.method, test.host, test.path), func(t *testing.T) {
-			pat, err := Parse(test.pattern)
-			if err != nil {
-				t.Fatal(err)
-			}
-			gotMatch, gotMatches := pat.Match(test.method, test.host, test.path)
-			if g, w := gotMatch, test.wantMatch; g != w {
-				t.Errorf("match: got %t, want %t", g, w)
-			}
-			if g, w := gotMatches, test.wantMatches; !reflect.DeepEqual(g, w) {
-				t.Errorf("matches: got %#v, want %#v", g, w)
-			}
-		})
-	}
-}
-
-func TestLiteralPrefixLen(t *testing.T) {
-	for _, test := range []struct {
-		pattern string
-		want    int
-	}{
-		{"/", 1},
-		{"/{x}", 1},
-		{"/{$}", 1},
-		{"/a", 2},
-		{"/abc", 4},
-		{"/a/bc", 5},
-		{"/a/bc/{x}", 6},
-		{"/a/b/{$}", 5},
-		{"/{x}/{y}", 1},
-		{"/{x}/a", 1},
-	} {
-		p, err := Parse(test.pattern)
+		pat, err := Parse(test.pattern)
 		if err != nil {
 			t.Fatal(err)
 		}
-		got := p.literalPrefixLen()
-		if got != test.want {
-			t.Errorf("%q: got %d, want %d", test.pattern, got, test.want)
+		gotMatch, gotMatches := pat.Match(test.method, test.host, test.path)
+		if g, w := gotMatch, test.wantMatch; g != w {
+			t.Errorf("%q.Match(%q, %q, %q): got %t, want %t", pat, test.method, test.host, test.path, g, w)
+			return
+		}
+		if g, w := gotMatches, test.wantMatches; !reflect.DeepEqual(g, w) {
+			t.Errorf("matches: got %#v, want %#v", g, w)
 		}
 	}
 }
@@ -310,26 +291,27 @@ func TestMoreSpecificThan(t *testing.T) {
 		{"/", "GET /", false},
 		{"GET /", "POST /", false},
 
-		// 3. literal prefix
+		// 3. more specific path
 		{"/", "/", false},
 		{"/a", "/", true},
 		{"/", "/a", false},
 		{"/a", "/a", false},
-		{"/a/", "/a", true},
+		{"/a/", "/a", false},
 		{"/a", "/a/", false},
 		{"/a", "/a/{x}", false},
-		{"/a/{x}", "/a", true},
+		{"/a/{x}", "/a", false},
 		{"/a/{x}", "/a/{x}", false},
 		{"/a/{x...}", "/a/{x}", false},
-		{"/a/bc", "/a/b", true},
+		{"/a/{x}", "/a/{x...}", true},
+		{"/a/bc", "/a/b", false},
 		{"/a/b", "/a/bc", false},
 
 		// 4. {$}
 		{"/{$}", "/", true},
-		{"/", "/$", false},
+		{"/", "/{$}", false},
 		{"/a/{x}/{$}", "/a/{x}/", true},
 		{"/a/{x}/", "/a/{x}/{$}", false},
-		{"/a/b/", "/a/{x}/{$}", true},
+		{"/a/b/", "/a/{x}/{$}", false}, // old rule 3 would say it's true
 		{"/a/{x}/{$}", "/a/b/", false},
 		{"/a/{$}", "/b/{$}", false},
 
@@ -364,14 +346,15 @@ func TestConflictsWith(t *testing.T) {
 		{"/a/b/c", "/a/c/c", false},
 		{"/{x}", "/{y}", true},
 		{"/{x}", "/a", false}, // more specific
-		{"/{x}/{y}", "/{x}/a", true},
+		{"/{x}/{y}", "/{x}/a", false},
 		{"/{x}/{y}", "/{x}/a/b", false},
-		{"/{x}", "/a/{y}", false}, // more specific
+		{"/{x}", "/a/{y}", false},
 		{"/{x}/{y}", "/{x}/a/", false},
 		{"/{x}", "/a/{y...}", false},           // more specific
 		{"/{x}/a/{y}", "/{x}/a/{y...}", false}, // more specific
 		{"/{x}/{y}", "/{x}/a/{$}", false},      // more specific
-		{"/{x}/{y}/{$}", "/{x}/a/{$}", true},
+		{"/{x}/{y}/{$}", "/{x}/a/{$}", false},
+		{"/a/{x}", "/{x}/b", true},
 	} {
 		pat1, err := Parse(test.p1)
 		if err != nil {
