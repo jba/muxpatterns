@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestSpecif(t *testing.T) {
+func TestComparePaths(t *testing.T) {
 	for _, test := range []struct {
 		p1, p2 string
 		want   string
@@ -34,6 +34,10 @@ func TestSpecif(t *testing.T) {
 		{"/a/{x}/b/{y...}", "/{x}/c/{y...}", overlaps},
 		{"/a/{x}/b/", "/{x}/c/{y...}", overlaps},
 		{"/a/{x}/b/{$}", "/{x}/c/{y...}", overlaps},
+		{"/a/{x...}", "/b/{y...}", disjoint},
+		{"/a/{x...}", "/a/{y...}", overlaps},
+		{"/a/{z}/{x...}", "/a/b/{y...}", moreGeneral},
+		{"/a/{z}/{x...}", "/{z}/b/{y...}", overlaps},
 	} {
 		pat1, err := Parse(test.p1)
 		if err != nil {

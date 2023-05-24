@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // TODO:
-// check for overlap because of same method or host and overlapping paths???
+// - check host validity to catch missing initial slash; e.g. "{x}/a".
 
 package muxpatterns
 
@@ -30,7 +30,7 @@ var methods = []string{
 	http.MethodTrace,
 }
 
-// A Pattern is something that can be matched against a an HTTP request.
+// A Pattern is something that can be matched against an HTTP request.
 type Pattern struct {
 	method   string
 	host     string

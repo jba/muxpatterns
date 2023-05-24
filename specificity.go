@@ -167,6 +167,9 @@ func (p1 *Pattern) comparePaths(p2 *Pattern) string {
 	return overlaps
 }
 
+// #################################################################
+// TODO: coverage on the above; simplify it.
+
 func splitSegment(path string) (string, string) {
 	i := strings.IndexByte(path, '/')
 	if i < 0 {
