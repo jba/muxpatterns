@@ -268,18 +268,8 @@ func (p1 *Pattern) MoreSpecificThan(p2 *Pattern) bool {
 	if (p1.method == "") != (p2.method == "") {
 		return p1.method != ""
 	}
+	// 3. More specific paths.
 	return p1.comparePaths(p2) == moreSpecific
-
-	// // 3. Patterns with a longer literal (non-wildcard) prefix win over patterns
-	// // with shorter ones.
-	// if l1, l2 := p1.literalPrefixLen(), p2.literalPrefixLen(); l1 != l2 {
-	// 	return l1 > l2
-	// }
-	// //  4. Patterns that don't end in a multi win over patterns that do.
-	// if m1, m2 := p1.lastSeg().multi, p2.lastSeg().multi; m1 != m2 {
-	// 	return m2
-	// }
-	// return false
 }
 
 func (p *Pattern) lastSeg() segment {
@@ -302,50 +292,6 @@ func (p1 *Pattern) ConflictsWith(p2 *Pattern) bool {
 	return p1.comparePaths(p2) == overlaps
 }
 
-/*
-
-	if p1.MoreSpecificThan(p2) || p2.MoreSpecificThan(p1) {
-		return false
-	}
-
-	// Make p1 the one with fewer segments.
-	if len(p1.segments) > len(p2.segments) {
-		p1, p2 = p2, p1
-	}
-
-	for i, s1 := range p1.segments {
-		s2 := p2.segments[i]
-		// If corresponding literal segments differ, there is no overlap.
-		if !s1.wild && !s2.wild && s1.s != s2.s {
-			return false
-		}
-		// The {$} matches only paths ending in '/', and literals and ordinary wildcards do not match '/'.
-	}
-	if len(p1.segments) == len(p2.segments) {
-		// Both patterns have the same number of segments.
-		// We haven't ruled out overlap, meaning that each pair of corresponding
-		// segments is either the same literal, or at least one is a wildcard.
-		// The only case where they don't overlap is where one final segment is {$} and the other is not a multi.
-		s1 := p1.lastSeg()
-		s2 := p2.lastSeg()
-		if s1.isDollar() && s2.isDollar() {
-			return true
-		}
-		if (s1.isDollar() && !s2.multi) || (s2.isDollar() && !s1.multi) {
-			return false
-		}
-		return true
-	}
-	// p2 has more segments than p1.
-	// If the last segment of p1 is a multi, it matches the rest of p2, so there is
-	// overlap.
-	// Otherwise, there isn't: the last segment of p1 is either {$}, in which case it
-	// doesn't match the corresponding segment of p2 (which is not {$} or {...}), or
-	// it is a literal or ordinary wildcard, which means there is at least one more segment
-	// of p2 that it doesn't match.
-	return p1.segments[len(p1.segments)-1].multi
-}
-*/
 // A PatternSet is a set of non-conflicting patterns.
 // The zero value is an empty PatternSet, ready for use.
 type PatternSet struct {
