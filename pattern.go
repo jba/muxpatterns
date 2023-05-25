@@ -107,6 +107,7 @@ func (e element) String() string {
 // Wildcard names must be valid Go identifiers.
 // The "{$}" and "{name...}" wildcard must occur at the end of PATH.
 // PATH may end with a '/'.
+// Wildcard names in a path must be distinct.
 func Parse(s string) (*Pattern, error) {
 	if len(s) == 0 {
 		return nil, errors.New("empty pattern")
@@ -131,6 +132,7 @@ func Parse(s string) (*Pattern, error) {
 	if strings.IndexByte(p.host, '{') >= 0 {
 		return nil, errors.New("host contains '{' (missing initial '/'?")
 	}
+	seenNames := map[string]bool{}
 	for len(rest) > 0 {
 		// Invariant: rest[0] == '/'
 		i := strings.IndexByte(rest, '{')
@@ -171,6 +173,10 @@ func Parse(s string) (*Pattern, error) {
 		if !isValidWildcardName(name) {
 			return nil, fmt.Errorf("bad wildcard name %q", name)
 		}
+		if seenNames[name] {
+			return nil, fmt.Errorf("duplicate wildcard name %q", name)
+		}
+		seenNames[name] = true
 		p.elements = append(p.elements, element{wild: true, s: name, multi: multi})
 	}
 	if len(rest) > 0 {

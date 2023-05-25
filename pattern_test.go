@@ -115,6 +115,7 @@ func TestParseError(t *testing.T) {
 		{"/{a...}/", "not at end"},
 		{"/{a...}/x", "not at end"},
 		{"{a}/b", "missing initial '/'"},
+		{"/a/{x}/b/{x...}", "duplicate wildcard name"},
 	} {
 		_, err := Parse(test.in)
 		if err == nil || !strings.Contains(err.Error(), test.contains) {
