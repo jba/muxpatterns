@@ -604,10 +604,7 @@ func TestPatternSetMatch(t *testing.T) {
 			test.host = "example.com"
 		}
 		t.Run(fmt.Sprintf("%s,%s,%s", test.method, test.host, test.path), func(t *testing.T) {
-			p, got, err := ps.Match(test.method, test.host, test.path)
-			if err != nil {
-				t.Fatal(err)
-			}
+			p, got := ps.Match(test.method, test.host, test.path)
 			if p == nil {
 				if test.want != nil {
 					t.Error("got no match, wanted match")
@@ -618,5 +615,48 @@ func TestPatternSetMatch(t *testing.T) {
 				t.Errorf("got %v\nwant %v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestSort(t *testing.T) {
+	var ps PatternSet
+	for _, p := range []string{
+		"/item/",
+		"POST /item/{user}",
+		"/item/{user}",
+		"/item/{user}/{id}",
+		"/item/{user}/new",
+		"/item/{$}",
+		"POST alt.com/item/{userp}",
+		"/path/{p...}",
+	} {
+		pat, err := Parse(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ps.Register(pat); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ps.Sort()
+	var got []string
+	for _, p := range ps.patterns {
+		got = append(got, p.String())
+	}
+	// Pairs of patterns where the first is before the second.
+	// These are adjusted patterns, where a trailing slash displays as "/{...}"
+	// and a {$} displays as a trailing slash.
+	wants := [][2]string{
+		{"/item/", "/item/{...}"},
+		{"POST alt.com/item/{userp}", "POST /item/{user}"},
+		{"POST /item/{user}", "/item/{user}"},
+		{"/item/{user}/new", "/item/{user}/{id}"},
+	}
+	for _, ws := range wants {
+		g0 := slices.Index(got, ws[0])
+		g1 := slices.Index(got, ws[1])
+		if g0 < 0 || g1 < 0 || g0 >= g1 {
+			t.Errorf("got (%d, %d), wanted %q before %q", g0, g1, ws[0], ws[1])
+		}
 	}
 }

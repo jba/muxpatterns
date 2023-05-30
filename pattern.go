@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"golang.org/x/exp/slices"
@@ -443,6 +444,7 @@ func splitSegment(path string) (string, string) {
 type PatternSet struct {
 	mu       sync.Mutex
 	patterns []*Pattern
+	sorted   bool
 }
 
 // Register adds a Pattern to the set. If returns an error
@@ -456,11 +458,62 @@ func (s *PatternSet) Register(p *Pattern) error {
 		}
 	}
 	s.patterns = append(s.patterns, p)
+	s.sorted = false
 	return nil
 }
 
+func (s *PatternSet) Sort() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sort()
+	s.sorted = true
+}
+
+// requires lock
+func (s *PatternSet) sort() {
+	start := time.Now()
+	defer func() {
+		fmt.Println("sorting took", time.Since(start))
+	}()
+
+	// Topological sort by precedence.
+	// Build adjacency map.
+	higherThan := map[*Pattern][]*Pattern{}
+	for i, p1 := range s.patterns {
+		for _, p2 := range s.patterns[i+1:] {
+			if p1.HigherPrecedence(p2) {
+				higherThan[p2] = append(higherThan[p2], p1)
+			} else if p2.HigherPrecedence(p1) {
+				higherThan[p1] = append(higherThan[p1], p2)
+			}
+		}
+	}
+
+	// Topo sort.
+	var sorted []*Pattern
+	seen := map[*Pattern]bool{}
+
+	var visit func(*Pattern)
+	visit = func(p *Pattern) {
+		if seen[p] {
+			return
+		}
+		for _, lower := range higherThan[p] {
+			visit(lower)
+		}
+		sorted = append(sorted, p)
+		seen[p] = true
+	}
+
+	for _, p := range s.patterns {
+		visit(p)
+	}
+
+	s.patterns = sorted
+}
+
 // MatchRequest calls Match with the request's method, host and path.
-func (s *PatternSet) MatchRequest(req *http.Request) (*Pattern, map[string]string, error) {
+func (s *PatternSet) MatchRequest(req *http.Request) (*Pattern, map[string]string) {
 	return s.Match(req.Method, req.URL.Host, req.URL.Path)
 }
 
@@ -468,32 +521,27 @@ func (s *PatternSet) MatchRequest(req *http.Request) (*Pattern, map[string]strin
 // It returns the highest-precedence matching pattern and a map from wildcard
 // names to matching path segments.
 // Match returns (nil, nil, nil) if there is no matching pattern.
-func (s *PatternSet) Match(method, host, path string) (*Pattern, map[string]string, error) {
+func (s *PatternSet) Match(method, host, path string) (*Pattern, map[string]string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var (
-		best    *Pattern
-		matches []string
-	)
+	if !s.sorted {
+		s.sort()
+		s.sorted = true
+	}
+	// Since the patterns are sorted by precedence, the first match
+	// is the winner.
 	for _, p := range s.patterns {
 		if ok, ms := p.Match(method, host, path); ok {
-			if best == nil || p.HigherPrecedence(best) {
-				best = p
-				matches = ms
-			}
+			return p, p.bind(ms)
 		}
 	}
-	if best == nil {
-		return nil, nil, nil
-	}
-	bindings, err := best.bind(matches)
-	return best, bindings, err
+	return nil, nil
 }
 
 // bind returns a map from wildcard names to matched, decoded values.
 // matches is a list of matched substrings in the order that non-empty wildcards
 // appear in the Pattern.
-func (p *Pattern) bind(matches []string) (map[string]string, error) {
+func (p *Pattern) bind(matches []string) map[string]string {
 	bindings := map[string]string{}
 	i := 0
 	for _, seg := range p.elements {
@@ -502,7 +550,7 @@ func (p *Pattern) bind(matches []string) (map[string]string, error) {
 			i++
 		}
 	}
-	return bindings, nil
+	return bindings
 }
 
 type Server struct {
@@ -515,10 +563,7 @@ type Server struct {
 // just for benchmarking with
 // github.com/julienschmidt/go-http-routing-benchmark.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	pat, _, err := s.ps.MatchRequest(r)
-	if err != nil {
-		panic(err)
-	}
+	pat, _ := s.ps.MatchRequest(r)
 	s.mu.RLock()
 	h := s.handlers[pat]
 	s.mu.RUnlock()
@@ -544,4 +589,8 @@ func (s *Server) Handle(pattern string, handler http.Handler) {
 
 func (s *Server) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
 	s.Handle(pattern, http.HandlerFunc(handler))
+}
+
+func (s *Server) Prepare() {
+	s.ps.Sort()
 }
