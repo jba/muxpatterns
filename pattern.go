@@ -504,3 +504,44 @@ func (p *Pattern) bind(matches []string) (map[string]string, error) {
 	}
 	return bindings, nil
 }
+
+type Server struct {
+	mu       sync.RWMutex
+	ps       PatternSet
+	handlers map[*Pattern]http.Handler
+}
+
+// ServeHTTP makes a PatternSet implement the http.Handler interface. This is
+// just for benchmarking with
+// github.com/julienschmidt/go-http-routing-benchmark.
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	pat, _, err := s.ps.MatchRequest(r)
+	if err != nil {
+		panic(err)
+	}
+	s.mu.RLock()
+	h := s.handlers[pat]
+	s.mu.RUnlock()
+	if h == nil {
+		h = http.NotFoundHandler()
+	}
+	h.ServeHTTP(w, r)
+}
+
+func (s *Server) Handle(pattern string, handler http.Handler) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pat, err := Parse(pattern)
+	if err != nil {
+		panic(err)
+	}
+	s.ps.Register(pat)
+	if s.handlers == nil {
+		s.handlers = map[*Pattern]http.Handler{}
+	}
+	s.handlers[pat] = handler
+}
+
+func (s *Server) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
+	s.Handle(pattern, http.HandlerFunc(handler))
+}
