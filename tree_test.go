@@ -79,6 +79,7 @@ func TestNextSegment(t *testing.T) {
 	}
 }
 
+// TODO: test host and method
 var testTree *node
 
 func init() {
@@ -100,28 +101,32 @@ func init() {
 
 func TestAddPattern(t *testing.T) {
 	want := `nil
-"a":
-    "/a"
-    "":
-        "/a/{x}"
-    "b":
-        "/a/b"
-        "":
-            "/a/b/{y}"
-        "*":
-            "/a/b/{x...}"
-        "/":
-            "/a/b/"
-"g":
+"":
     nil
     "":
         nil
-        "j":
-            "/g/{x}/j"
-    "h":
-        nil
-        "i":
-            "/g/h/i"
+        "a":
+            "/a"
+            "":
+                "/a/{x}"
+            "b":
+                "/a/b"
+                "":
+                    "/a/b/{y}"
+                "*":
+                    "/a/b/{x...}"
+                "/":
+                    "/a/b/"
+        "g":
+            nil
+            "":
+                nil
+                "j":
+                    "/g/{x}/j"
+            "h":
+                nil
+                "i":
+                    "/g/h/i"
 `
 
 	var b strings.Builder
@@ -148,7 +153,7 @@ func TestNodeMatch(t *testing.T) {
 		{"/g/h/i", "/g/h/i", nil},
 		{"/g/h/j", "/g/{x}/j", []string{"h"}},
 	} {
-		gotPat, gotMatches := testTree.match(test.path, nil)
+		gotPat, gotMatches := testTree.match("", "", test.path)
 		got := ""
 		if gotPat != nil {
 			got = gotPat.String()

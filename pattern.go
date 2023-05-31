@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 	"unicode"
 
 	"golang.org/x/exp/slices"
@@ -444,7 +443,7 @@ func splitSegment(path string) (string, string) {
 type PatternSet struct {
 	mu       sync.Mutex
 	patterns []*Pattern
-	sorted   bool
+	tree     *node
 }
 
 // Register adds a Pattern to the set. If returns an error
@@ -458,58 +457,11 @@ func (s *PatternSet) Register(p *Pattern) error {
 		}
 	}
 	s.patterns = append(s.patterns, p)
-	s.sorted = false
+	if s.tree == nil {
+		s.tree = &node{}
+	}
+	s.tree.addPattern(p)
 	return nil
-}
-
-func (s *PatternSet) Sort() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.sort()
-	s.sorted = true
-}
-
-// requires lock
-func (s *PatternSet) sort() {
-	start := time.Now()
-	defer func() {
-		fmt.Println("sorting took", time.Since(start))
-	}()
-
-	// Topological sort by precedence.
-	// Build adjacency map.
-	higherThan := map[*Pattern][]*Pattern{}
-	for i, p1 := range s.patterns {
-		for _, p2 := range s.patterns[i+1:] {
-			if p1.HigherPrecedence(p2) {
-				higherThan[p2] = append(higherThan[p2], p1)
-			} else if p2.HigherPrecedence(p1) {
-				higherThan[p1] = append(higherThan[p1], p2)
-			}
-		}
-	}
-
-	// Topo sort.
-	var sorted []*Pattern
-	seen := map[*Pattern]bool{}
-
-	var visit func(*Pattern)
-	visit = func(p *Pattern) {
-		if seen[p] {
-			return
-		}
-		for _, lower := range higherThan[p] {
-			visit(lower)
-		}
-		sorted = append(sorted, p)
-		seen[p] = true
-	}
-
-	for _, p := range s.patterns {
-		visit(p)
-	}
-
-	s.patterns = sorted
 }
 
 // MatchRequest calls Match with the request's method, host and path.
@@ -524,16 +476,10 @@ func (s *PatternSet) MatchRequest(req *http.Request) (*Pattern, map[string]strin
 func (s *PatternSet) Match(method, host, path string) (*Pattern, map[string]string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.sorted {
-		s.sort()
-		s.sorted = true
-	}
-	// Since the patterns are sorted by precedence, the first match
-	// is the winner.
-	for _, p := range s.patterns {
-		if ok, ms := p.Match(method, host, path); ok {
-			return p, p.bind(ms)
-		}
+
+	pat, matches := s.tree.match(method, host, path)
+	if pat != nil {
+		return pat, pat.bind(matches)
 	}
 	return nil, nil
 }
@@ -557,6 +503,7 @@ type Server struct {
 	mu       sync.RWMutex
 	ps       PatternSet
 	handlers map[*Pattern]http.Handler
+	tree     *node
 }
 
 // ServeHTTP makes a PatternSet implement the http.Handler interface. This is
@@ -591,8 +538,4 @@ func (s *Server) Handle(pattern string, handler http.Handler) {
 
 func (s *Server) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
 	s.Handle(pattern, http.HandlerFunc(handler))
-}
-
-func (s *Server) Prepare() {
-	s.ps.Sort()
 }
