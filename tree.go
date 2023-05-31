@@ -7,19 +7,23 @@ package muxpatterns
 import (
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 
-	"golang.org/x/exp/maps"
+	"golang.org/x/exp/slices"
 )
+
+type entry struct {
+	key   string
+	child *node
+}
 
 type node struct {
 	// special children keys:
 	//     "/"	trailing slash
 	//	   ""   single wildcard
 	//	   "*"  multi wildcard
-	children map[string]*node // interior node
-	pat      *Pattern         // leaf
+	children []entry  // interior node
+	pat      *Pattern // leaf
 }
 
 type segment struct {
@@ -91,7 +95,7 @@ func (n *node) addSegments(segs []segment, p *Pattern) {
 		if len(segs) != 1 {
 			panic("multi wildcard not last")
 		}
-		if n.children["*"] != nil {
+		if n.findChild("*") != nil {
 			panic("dup multi wildcards")
 		}
 		c := n.addChild("*")
@@ -104,36 +108,42 @@ func (n *node) addSegments(segs []segment, p *Pattern) {
 }
 
 func (n *node) addChild(key string) *node {
-	if n.children == nil {
-		n.children = map[string]*node{}
-	}
-	if c := n.children[key]; c != nil {
+	if c := n.findChild(key); c != nil {
 		return c
 	}
 	c := &node{}
-	n.children[key] = c
+	n.children = append(n.children, entry{key, c})
 	return c
 }
 
+func (n *node) findChild(key string) *node {
+	for _, e := range n.children {
+		if e.key == key {
+			return e.child
+		}
+	}
+	return nil
+}
+
 func (root *node) match(method, host, path string) (*Pattern, []string) {
-	if c := root.children[host]; c != nil && host != "" {
+	if c := root.findChild(host); c != nil && host != "" {
 		if p, m := c.matchMethodAndPath(method, path); p != nil {
 			return p, m
 		}
 	}
-	if c := root.children[""]; c != nil {
+	if c := root.findChild(""); c != nil {
 		return c.matchMethodAndPath(method, path)
 	}
 	return nil, nil
 }
 
 func (n *node) matchMethodAndPath(method, path string) (*Pattern, []string) {
-	if c := n.children[method]; c != nil && method != "" {
+	if c := n.findChild(method); c != nil && method != "" {
 		if p, m := c.matchPath(path, nil); p != nil {
 			return p, m
 		}
 	}
-	if c := n.children[""]; c != nil {
+	if c := n.findChild(""); c != nil {
 		return c.matchPath(path, nil)
 	}
 	return nil, nil
@@ -146,24 +156,25 @@ func (n *node) matchPath(path string, matches []string) (*Pattern, []string) {
 		return n.pat, matches
 	}
 	seg, rest := nextSegment(path)
-	if c := n.children[seg]; c != nil {
+	if c := n.findChild(seg); c != nil {
 		if p, m := c.matchPath(rest, matches); p != nil {
 			return p, m
 		}
 	}
 	// Match single wildcard.
-	if c := n.children[""]; c != nil {
+	if c := n.findChild(""); c != nil {
 		if p, m := c.matchPath(rest, append(matches, seg)); p != nil {
 			return p, m
 		}
 	}
 	// Match multi wildcard to the rest of the pattern.
-	if c := n.children["*"]; c != nil {
+	if c := n.findChild("*"); c != nil {
 		return c.pat, append(matches, path[1:]) // remove initial slash
 	}
 	return nil, nil
 }
 
+// Modifies n; use for testing only.
 func (n *node) print(w io.Writer, level int) {
 	indent := strings.Repeat("    ", level)
 	if n.pat != nil {
@@ -171,10 +182,11 @@ func (n *node) print(w io.Writer, level int) {
 	} else {
 		fmt.Fprintf(w, "%snil\n", indent)
 	}
-	keys := maps.Keys(n.children)
-	sort.Strings(keys)
-	for _, k := range keys {
-		fmt.Fprintf(w, "%s%q:\n", indent, k)
-		n.children[k].print(w, level+1)
+	slices.SortFunc(n.children, func(e1, e2 entry) bool {
+		return e1.key < e2.key
+	})
+	for _, e := range n.children {
+		fmt.Fprintf(w, "%s%q:\n", indent, e.key)
+		e.child.print(w, level+1)
 	}
 }
