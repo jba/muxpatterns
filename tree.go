@@ -22,8 +22,9 @@ type node struct {
 	//     "/"	trailing slash
 	//	   ""   single wildcard
 	//	   "*"  multi wildcard
-	children []entry  // interior node
-	pat      *Pattern // leaf
+	children   []entry  // interior node
+	emptyChild *node    // child with key ""
+	pat        *Pattern // leaf
 }
 
 type segment struct {
@@ -108,6 +109,12 @@ func (n *node) addSegments(segs []segment, p *Pattern) {
 }
 
 func (n *node) addChild(key string) *node {
+	if key == "" {
+		if n.emptyChild == nil {
+			n.emptyChild = &node{}
+		}
+		return n.emptyChild
+	}
 	if c := n.findChild(key); c != nil {
 		return c
 	}
@@ -117,6 +124,9 @@ func (n *node) addChild(key string) *node {
 }
 
 func (n *node) findChild(key string) *node {
+	if key == "" {
+		return n.emptyChild
+	}
 	for _, e := range n.children {
 		if e.key == key {
 			return e.child
@@ -185,6 +195,10 @@ func (n *node) print(w io.Writer, level int) {
 	slices.SortFunc(n.children, func(e1, e2 entry) bool {
 		return e1.key < e2.key
 	})
+	if n.emptyChild != nil {
+		fmt.Fprintf(w, "%s%q:\n", indent, "")
+		n.emptyChild.print(w, level+1)
+	}
 	for _, e := range n.children {
 		fmt.Fprintf(w, "%s%q:\n", indent, e.key)
 		e.child.print(w, level+1)
