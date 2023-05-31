@@ -580,7 +580,9 @@ func (s *Server) Handle(pattern string, handler http.Handler) {
 	if err != nil {
 		panic(err)
 	}
-	s.ps.Register(pat)
+	if err := s.ps.Register(pat); err != nil {
+		panic(err)
+	}
 	if s.handlers == nil {
 		s.handlers = map[*Pattern]http.Handler{}
 	}

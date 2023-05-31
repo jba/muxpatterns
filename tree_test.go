@@ -79,15 +79,26 @@ func TestNextSegment(t *testing.T) {
 	}
 }
 
-func TestAddPattern(t *testing.T) {
-	root := &node{}
-	for _, p := range []string{"/a/b", "/a/{x}", "/a", "/a/b/", "/a/b/{y}", "/a/b/{$}"} {
+var testTree *node
+
+func init() {
+	testTree = &node{}
+	var ps PatternSet
+	for _, p := range []string{"/a", "/a/b", "/a/{x}",
+		"/g/h/i", "/g/{x}/j",
+		"/a/b/{x...}", "/a/b/{y}", "/a/b/{$}"} {
 		pat, err := Parse(p)
 		if err != nil {
-			t.Fatal(err)
+			panic(err)
 		}
-		root.addPattern(pat)
+		if err := ps.Register(pat); err != nil {
+			panic(err)
+		}
+		testTree.addPattern(pat)
 	}
+}
+
+func TestAddPattern(t *testing.T) {
 	want := `nil
 "a":
     "/a"
@@ -98,15 +109,55 @@ func TestAddPattern(t *testing.T) {
         "":
             "/a/b/{y}"
         "*":
-            "/a/b/{...}"
+            "/a/b/{x...}"
         "/":
             "/a/b/"
+"g":
+    nil
+    "":
+        nil
+        "j":
+            "/g/{x}/j"
+    "h":
+        nil
+        "i":
+            "/g/h/i"
 `
 
 	var b strings.Builder
-	root.print(&b, 0)
+	testTree.print(&b, 0)
 	got := b.String()
 	if got != want {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestNodeMatch(t *testing.T) {
+	for _, test := range []struct {
+		path        string
+		wantPat     string // "" for nil
+		wantMatches []string
+	}{
+		{"/a", "/a", nil},
+		{"/b", "", nil},
+		{"/a/b", "/a/b", nil},
+		{"/a/c", "/a/{x}", []string{"c"}},
+		{"/a/b/", "/a/b/", nil},
+		{"/a/b/c", "/a/b/{y}", []string{"c"}},
+		{"/a/b/c/d", "/a/b/{x...}", []string{"c/d"}},
+		{"/g/h/i", "/g/h/i", nil},
+		{"/g/h/j", "/g/{x}/j", []string{"h"}},
+	} {
+		gotPat, gotMatches := testTree.match(test.path, nil)
+		got := ""
+		if gotPat != nil {
+			got = gotPat.String()
+		}
+		if got != test.wantPat {
+			t.Errorf("%s: got %q, want %q", test.path, got, test.wantPat)
+		}
+		if !slices.Equal(gotMatches, test.wantMatches) {
+			t.Errorf("%s: got matches %v, want %v", test.path, gotMatches, test.wantMatches)
+		}
 	}
 }

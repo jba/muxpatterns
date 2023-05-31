@@ -14,9 +14,6 @@ import (
 )
 
 type node struct {
-	// lit   string // literal or "/" for trailing slash
-	// wild  bool
-	// multi bool // true only for leaves
 	// special children keys:
 	//     "/"	trailing slash
 	//	   ""   single wildcard
@@ -114,30 +111,29 @@ func (n *node) addChild(key string) *node {
 	return c
 }
 
-func (n *node) match(path string) *Pattern {
-	// // Multi matches whatever's left in path, even empty.
-	// if n.multi {
-	// 	return n.pat
-	// }
+func (n *node) match(path string, matches []string) (*Pattern, []string) {
 	// If path is empty, then return the node's pattern, which
 	// may be nil.
 	if path == "" {
-		return n.pat
+		return n.pat, matches
 	}
 	seg, rest := nextSegment(path)
 	if c := n.children[seg]; c != nil {
-		// TODO: backtracking.
-		return c.match(rest)
+		if p, m := c.match(rest, matches); p != nil {
+			return p, m
+		}
 	}
 	// Match single wildcard.
 	if c := n.children[""]; c != nil {
-		return c.match(rest)
+		if p, m := c.match(rest, append(matches, seg)); p != nil {
+			return p, m
+		}
 	}
-	// Match multi wildcard.
+	// Match multi wildcard to the rest of the pattern.
 	if c := n.children["*"]; c != nil {
-		return c.match(rest)
+		return c.pat, append(matches, path[1:]) // remove initial slash
 	}
-	return nil
+	return nil, nil
 }
 
 func (n *node) print(w io.Writer, level int) {
