@@ -444,6 +444,7 @@ type PatternSet struct {
 	mu       sync.Mutex
 	patterns []*Pattern
 	tree     *node
+	nobind   bool // for benchmarking
 }
 
 // Register adds a Pattern to the set. If returns an error
@@ -479,6 +480,9 @@ func (s *PatternSet) Match(method, host, path string) (*Pattern, map[string]stri
 
 	pat, matches := s.tree.match(method, host, path)
 	if pat != nil {
+		if s.nobind {
+			return pat, nil
+		}
 		return pat, pat.bind(matches)
 	}
 	return nil, nil
@@ -488,7 +492,7 @@ func (s *PatternSet) Match(method, host, path string) (*Pattern, map[string]stri
 // matches is a list of matched substrings in the order that non-empty wildcards
 // appear in the Pattern.
 func (p *Pattern) bind(matches []string) map[string]string {
-	bindings := map[string]string{}
+	bindings := make(map[string]string, len(matches))
 	i := 0
 	for _, seg := range p.elements {
 		if seg.wild && seg.s != "" {
@@ -523,6 +527,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) Handle(pattern string, handler http.Handler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.ps.nobind = true
 	pat, err := Parse(pattern)
 	if err != nil {
 		panic(err)

@@ -7,9 +7,10 @@ package muxpatterns
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
-	"golang.org/x/exp/slices"
+	"golang.org/x/exp/maps"
 )
 
 type entry struct {
@@ -22,7 +23,7 @@ type node struct {
 	//     "/"	trailing slash
 	//	   ""   single wildcard
 	//	   "*"  multi wildcard
-	children   []entry  // interior node
+	children   *hybrid  // map[string]*node // interior node
 	emptyChild *node    // child with key ""
 	pat        *Pattern // leaf
 }
@@ -119,41 +120,41 @@ func (n *node) addChild(key string) *node {
 		return c
 	}
 	c := &node{}
-	n.children = append(n.children, entry{key, c})
+	if n.children == nil {
+		n.children = newHybrid(8)
+	}
+	n.children.add(key, c)
 	return c
 }
 
 func (n *node) findChild(key string) *node {
-	if key == "" {
-		return n.emptyChild
-	}
-	for _, e := range n.children {
-		if e.key == key {
-			return e.child
-		}
-	}
-	return nil
+	return n.children.get(key)
 }
 
 func (root *node) match(method, host, path string) (*Pattern, []string) {
-	if c := root.findChild(host); c != nil && host != "" {
-		if p, m := c.matchMethodAndPath(method, path); p != nil {
-			return p, m
+	if host != "" {
+		if c := root.findChild(host); c != nil {
+			if p, m := c.matchMethodAndPath(method, path); p != nil {
+				return p, m
+			}
 		}
 	}
-	if c := root.findChild(""); c != nil {
+	if c := root.emptyChild; c != nil {
 		return c.matchMethodAndPath(method, path)
 	}
 	return nil, nil
 }
 
 func (n *node) matchMethodAndPath(method, path string) (*Pattern, []string) {
-	if c := n.findChild(method); c != nil && method != "" {
+	if method == "" {
+		panic("empty method")
+	}
+	if c := n.findChild(method); c != nil {
 		if p, m := c.matchPath(path, nil); p != nil {
 			return p, m
 		}
 	}
-	if c := n.findChild(""); c != nil {
+	if c := n.emptyChild; c != nil {
 		return c.matchPath(path, nil)
 	}
 	return nil, nil
@@ -172,7 +173,7 @@ func (n *node) matchPath(path string, matches []string) (*Pattern, []string) {
 		}
 	}
 	// Match single wildcard.
-	if c := n.findChild(""); c != nil {
+	if c := n.emptyChild; c != nil {
 		if p, m := c.matchPath(rest, append(matches, seg)); p != nil {
 			return p, m
 		}
@@ -192,15 +193,72 @@ func (n *node) print(w io.Writer, level int) {
 	} else {
 		fmt.Fprintf(w, "%snil\n", indent)
 	}
-	slices.SortFunc(n.children, func(e1, e2 entry) bool {
-		return e1.key < e2.key
-	})
 	if n.emptyChild != nil {
 		fmt.Fprintf(w, "%s%q:\n", indent, "")
 		n.emptyChild.print(w, level+1)
 	}
-	for _, e := range n.children {
-		fmt.Fprintf(w, "%s%q:\n", indent, e.key)
-		e.child.print(w, level+1)
+
+	keys := n.children.keys()
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		fmt.Fprintf(w, "%s%q:\n", indent, k)
+		n.children.get(k).print(w, level+1)
 	}
+}
+
+type hybrid struct {
+	maxSlice int
+	s        []entry
+	m        map[string]*node
+}
+
+func newHybrid(ms int) *hybrid {
+	return &hybrid{
+		maxSlice: ms,
+	}
+}
+
+func (h *hybrid) add(k string, v *node) {
+	if len(h.s) < h.maxSlice {
+		h.s = append(h.s, entry{k, v})
+	} else {
+		if h.m == nil {
+			h.m = map[string]*node{}
+			for _, e := range h.s {
+				h.m[e.key] = e.child
+			}
+			h.s = nil
+		}
+		h.m[k] = v
+	}
+}
+
+func (h *hybrid) get(k string) *node {
+	if h == nil {
+		return nil
+	}
+	if h.m != nil {
+		return h.m[k]
+	}
+	for _, e := range h.s {
+		if e.key == k {
+			return e.child
+		}
+	}
+	return nil
+}
+
+func (h *hybrid) keys() []string {
+	if h == nil {
+		return nil
+	}
+	if h.m != nil {
+		return maps.Keys(h.m)
+	}
+	var keys []string
+	for _, e := range h.s {
+		keys = append(keys, e.key)
+	}
+	return keys
 }
