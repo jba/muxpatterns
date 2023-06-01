@@ -121,7 +121,7 @@ func (n *node) addChild(key string) *node {
 	}
 	c := &node{}
 	if n.children == nil {
-		n.children = newHybrid(1)
+		n.children = newHybrid(8)
 	}
 	n.children.add(key, c)
 	return c
