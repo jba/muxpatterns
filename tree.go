@@ -121,7 +121,7 @@ func (n *node) addChild(key string) *node {
 	}
 	c := &node{}
 	if n.children == nil {
-		n.children = newHybrid(8)
+		n.children = newHybrid(1)
 	}
 	n.children.add(key, c)
 	return c
@@ -220,7 +220,7 @@ func newHybrid(ms int) *hybrid {
 }
 
 func (h *hybrid) add(k string, v *node) {
-	if len(h.s) < h.maxSlice {
+	if h.m == nil && len(h.s) < h.maxSlice {
 		h.s = append(h.s, entry{k, v})
 	} else {
 		if h.m == nil {
