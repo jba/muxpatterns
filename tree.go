@@ -28,39 +28,6 @@ type node struct {
 	pat        *Pattern // leaf
 }
 
-type segment struct {
-	s     string // literal or "/"
-	wild  bool
-	multi bool
-}
-
-func (p *Pattern) toSegments() []segment {
-	var segs []segment
-	for _, e := range p.elements {
-		if e.multi {
-			segs = append(segs, segment{wild: true, multi: true})
-		} else if e.wild {
-			segs = append(segs, segment{wild: true})
-		} else {
-			parts := strings.Split(e.s, "/")
-			if parts[0] == "" {
-				parts = parts[1:]
-			}
-			if parts[len(parts)-1] == "" {
-				parts = parts[:len(parts)-1]
-			}
-			for _, a := range parts {
-				segs = append(segs, segment{s: a})
-			}
-		}
-	}
-	last := p.elements[len(p.elements)-1]
-	if strings.HasSuffix(last.s, "/") {
-		segs = append(segs, segment{s: "/"})
-	}
-	return segs
-}
-
 // returns segment, "/" for trailing slash, or "" for done.
 // path should start with a "/"
 func nextSegment(path string) (seg, rest string) {
@@ -81,7 +48,7 @@ func (root *node) addPattern(p *Pattern) {
 	// Second level of tree is method.
 	n = n.addChild(p.method)
 	// Remaining levels are path.
-	n.addSegments(p.toSegments(), p)
+	n.addSegments(p.segments, p)
 }
 
 func (n *node) addSegments(segs []segment, p *Pattern) {

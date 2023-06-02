@@ -39,9 +39,20 @@ type Pattern struct {
 	host   string
 	// The representation of a path differs from the surface syntax.
 	// Paths ending in '/' are represented with an anonymous "..." wildcard.
-	// Paths ending in "{$}" are represented with an element ending in '/'.
+	// Paths ending in "{$}" are represented with the literal segment "/".
 	// This makes most algorithms simpler.
-	elements []element
+	segments []segment
+}
+
+// A segment is a pattern piece that matches one or more path segments, or
+// a trailing slash.
+// If wild is false, it matches a literal segment, or, if s == "/", a trailing slash.
+// If wild is true and multi is false, it matches a single path segment.
+// If both wild and multi are true, it matches all remaining path segments.
+type segment struct {
+	s     string // literal or wildcard name or "/" for "/{$}".
+	wild  bool
+	multi bool // "..." wildcard
 }
 
 func (p *Pattern) Method() string { return p.method }
@@ -55,40 +66,25 @@ func (p *Pattern) String() string {
 	if p.host != "" {
 		b.WriteString(p.host)
 	}
-	for _, s := range p.elements {
-		if !s.wild {
-			b.WriteString(s.s)
-		} else {
-			b.WriteByte('{')
-			b.WriteString(s.s)
-			if s.multi {
-				b.WriteString("...")
-			}
-			b.WriteByte('}')
-		}
+	for _, s := range p.segments {
+		b.WriteString(s.String())
 	}
 	return b.String()
 }
 
-// An element is a pattern piece that matches one or more path segments.
-// If wild is false, it matches a literal sub-path, including slashes.
-// If wild is true and multi is false, it matches a single path segment.
-// If both wild and multi are true, it matches all remaining path elements.
-type element struct {
-	s     string // literal string or wildcard name
-	wild  bool   // a wildcard
-	multi bool   // wildcard ends in "..."
-}
-
-func (e element) String() string {
-	if !e.wild {
-		return e.s
+func (s segment) String() string {
+	switch {
+	case s.multi && s.s == "": // Trailing slash.
+		return "/"
+	case s.multi:
+		return fmt.Sprintf("/{%s...}", s.s)
+	case s.wild:
+		return fmt.Sprintf("/{%s}", s.s)
+	case s.s == "/":
+		return "/{$}"
+	default: // Literal.
+		return "/" + s.s
 	}
-	dots := ""
-	if e.multi {
-		dots = "..."
-	}
-	return "{" + e.s + dots + "}"
 }
 
 // Parse parses a string into a Pattern.
@@ -134,62 +130,60 @@ func Parse(s string) (*Pattern, error) {
 	}
 	seenNames := map[string]bool{}
 	for len(rest) > 0 {
-		// Invariant: rest[0] == '/'
-		i := strings.IndexByte(rest, '{')
-		if i < 0 {
+		// Invariant: rest[0] == '/'.
+		rest = rest[1:]
+		if len(rest) == 0 {
+			// Trailing slash.
+			p.segments = append(p.segments, segment{wild: true, multi: true})
 			break
 		}
-		if i > 0 && rest[i-1] != '/' {
-			return nil, errors.New("bad wildcard segment (starts after '/')")
+		i := strings.IndexByte(rest, '/')
+		if i == 0 {
+			return nil, errors.New("empty path segment")
 		}
-		p.elements = append(p.elements, element{s: rest[:i]})
-		rest = rest[i+1:]
-		j := strings.IndexByte(rest, '}')
-		if j < 0 {
-			return nil, errors.New("bad wildcard segment: missing '}'")
+		if i < 0 {
+			i = len(rest)
 		}
-		if j == 0 {
-			return nil, errors.New("empty wildcard")
-		}
-		name := rest[:j]
-		rest = rest[j+1:]
-		if len(rest) > 0 && rest[0] != '/' {
-			return nil, errors.New("bad wildcard segment (ends before '/')")
-		}
-		if name == "$" {
-			if len(rest) != 0 {
-				return nil, errors.New("{$} not at end")
+		var seg string
+		seg, rest = rest[:i], rest[i:]
+		if i := strings.IndexByte(seg, '{'); i < 0 {
+			// Literal.
+			p.segments = append(p.segments, segment{s: seg})
+		} else {
+			// Wildcard.
+			if i != 0 {
+				return nil, errors.New("bad wildcard segment (must start with '{')")
 			}
-			return p, nil
-		}
-		var multi bool
-		if strings.HasSuffix(name, "...") {
-			multi = true
-			name = name[:len(name)-3]
-			if len(rest) != 0 {
-				return nil, errors.New("{...} wildcard not at end")
+			if seg[len(seg)-1] != '}' {
+				return nil, errors.New("bad wildcard segment (must end with '}')")
 			}
-		}
-		if !isValidWildcardName(name) {
-			return nil, fmt.Errorf("bad wildcard name %q", name)
-		}
-		if seenNames[name] {
-			return nil, fmt.Errorf("duplicate wildcard name %q", name)
-		}
-		seenNames[name] = true
-		p.elements = append(p.elements, element{wild: true, s: name, multi: multi})
-	}
-	if len(rest) > 0 {
-		p.elements = append(p.elements, element{s: rest})
-		if rest[len(rest)-1] == '/' {
-			p.elements = append(p.elements, element{wild: true, multi: true})
-		}
-	}
-	for _, e := range p.elements {
-		if !e.wild {
-			if strings.Contains(e.s, "//") {
-				return nil, errors.New("empty path segment")
+			name := seg[1 : len(seg)-1]
+			if name == "$" {
+				if len(rest) != 0 {
+					return nil, errors.New("{$} not at end")
+				}
+				p.segments = append(p.segments, segment{s: "/"})
+				break
 			}
+			var multi bool
+			if strings.HasSuffix(name, "...") {
+				multi = true
+				name = name[:len(name)-3]
+				if len(rest) != 0 {
+					return nil, errors.New("{...} wildcard not at end")
+				}
+			}
+			if name == "" {
+				return nil, errors.New("empty wildcard")
+			}
+			if !isValidWildcardName(name) {
+				return nil, fmt.Errorf("bad wildcard name %q", name)
+			}
+			if seenNames[name] {
+				return nil, fmt.Errorf("duplicate wildcard name %q", name)
+			}
+			seenNames[name] = true
+			p.segments = append(p.segments, segment{s: name, wild: true, multi: multi})
 		}
 	}
 	return p, nil
@@ -208,66 +202,66 @@ func isValidWildcardName(s string) bool {
 	return true
 }
 
-// Match reports whether p matches the method, host and path.
-// The method and host may be empty.
-// The path must start with a '/'
-// If the first return value is true, the second is the list of wildcard matches,
-// in the order the wildcards occur in p.
-//
-// A wildcard other than "$" that does not end in "..." matches a non-empty
-// path segment. So "/{x}" matches "/a" but not "/".
-//
-// A wildcard that ends in "..." can match the empty string, or a sequence of path segments.
-// So "/{x...}" matches the paths "/", "/a", "/a/" and "/a/b". In each case, the string
-// associated with "x" is the path with the initial slash removed.
-//
-// The wildcard "{$}" matches the empty string, but only after a final slash.
-func (p *Pattern) Match(method, host, path string) (bool, []string) {
-	if len(path) == 0 || path[0] != '/' {
-		panic("path should start with '/'")
-	}
-	if len(p.elements) == 0 {
-		panic("pattern has no segments")
-	}
+// // Match reports whether p matches the method, host and path.
+// // The method and host may be empty.
+// // The path must start with a '/'
+// // If the first return value is true, the second is the list of wildcard matches,
+// // in the order the wildcards occur in p.
+// //
+// // A wildcard other than "$" that does not end in "..." matches a non-empty
+// // path segment. So "/{x}" matches "/a" but not "/".
+// //
+// // A wildcard that ends in "..." can match the empty string, or a sequence of path segments.
+// // So "/{x...}" matches the paths "/", "/a", "/a/" and "/a/b". In each case, the string
+// // associated with "x" is the path with the initial slash removed.
+// //
+// // The wildcard "{$}" matches the empty string, but only after a final slash.
+// func (p *Pattern) Match(method, host, path string) (bool, []string) {
+// 	if len(path) == 0 || path[0] != '/' {
+// 		panic("path should start with '/'")
+// 	}
+// 	if len(p.elements) == 0 {
+// 		panic("pattern has no segments")
+// 	}
 
-	if p.method != "" && method != p.method {
-		return false, nil
-	}
-	if p.host != "" && host != p.host {
-		return false, nil
-	}
-	rest := path
-	var matches []string
-	for _, el := range p.elements {
-		if el.multi {
-			if el.s != "" {
-				matches = append(matches, rest)
-			}
-			rest = ""
-		} else if el.wild {
-			i := strings.IndexByte(rest, '/')
-			if i < 0 {
-				i = len(rest)
-			}
-			if i == 0 {
-				// Ordinary wildcard matching empty string.
-				return false, nil
-			}
-			matches = append(matches, rest[:i])
-			rest = rest[i:]
-		} else {
-			var found bool
-			rest, found = strings.CutPrefix(rest, el.s)
-			if !found {
-				return false, nil
-			}
-		}
-	}
-	if len(rest) > 0 {
-		return false, nil
-	}
-	return true, matches
-}
+// 	if p.method != "" && method != p.method {
+// 		return false, nil
+// 	}
+// 	if p.host != "" && host != p.host {
+// 		return false, nil
+// 	}
+// 	rest := path
+// 	var matches []string
+// 	for _, el := range p.elements {
+// 		if el.multi {
+// 			if el.s != "" {
+// 				matches = append(matches, rest)
+// 			}
+// 			rest = ""
+// 		} else if el.wild {
+// 			i := strings.IndexByte(rest, '/')
+// 			if i < 0 {
+// 				i = len(rest)
+// 			}
+// 			if i == 0 {
+// 				// Ordinary wildcard matching empty string.
+// 				return false, nil
+// 			}
+// 			matches = append(matches, rest[:i])
+// 			rest = rest[i:]
+// 		} else {
+// 			var found bool
+// 			rest, found = strings.CutPrefix(rest, el.s)
+// 			if !found {
+// 				return false, nil
+// 			}
+// 		}
+// 	}
+// 	if len(rest) > 0 {
+// 		return false, nil
+// 	}
+// 	return true, matches
+// }
 
 // HigherPrecedence reports whether p1 has higher precedence than p2.
 // If p1 and p2 both match a request, then p1 will be chosen.
@@ -324,11 +318,6 @@ const (
 //	overlaps: there is a path that both match, but neither is more specific
 //	disjoint: there is no path that both match
 func (p1 *Pattern) comparePaths(p2 *Pattern) string {
-	// Copy the segment slices to make the algorithm simpler.
-	// TODO: avoid the copy; simplify the entire algorithm.
-	segs1 := slices.Clone(p1.elements)
-	segs2 := slices.Clone(p2.elements)
-
 	// Track whether a single (non-multi) wildcard in p1 matched
 	// a literal in p2, and vice versa.
 	// We care about these because if a wildcard matches a literal, then the
@@ -336,12 +325,12 @@ func (p1 *Pattern) comparePaths(p2 *Pattern) string {
 	// literal.
 	wild1MatchedLit2 := false
 	wild2MatchedLit1 := false
-	for len(segs1) > 0 && len(segs2) > 0 {
+	var segs1, segs2 []segment
+	for segs1, segs2 = p1.segments, p2.segments; len(segs1) > 0 && len(segs2) > 0; segs1, segs2 = segs1[1:], segs2[1:] {
 		s1 := segs1[0]
 		s2 := segs2[0]
 		if s1.multi && s2.multi {
-			segs1 = segs1[1:]
-			segs2 = segs2[1:]
+			// Two multis match each other.
 			continue
 		}
 		if s1.multi {
@@ -356,47 +345,37 @@ func (p1 *Pattern) comparePaths(p2 *Pattern) string {
 			return overlaps
 		}
 		if s2.multi {
-			// p2 matches the rest of p1.
+			// p2 matches the rest of p1. The same logic as above applies.
 			if !wild1MatchedLit2 {
 				return moreSpecific
 			}
 			return overlaps
 		}
+		if s1.s == "/" && s2.s == "/" {
+			// Both patterns end in "/{$}"; they match.
+			continue
+		}
+		if s1.s == "/" || s2.s == "/" {
+			// One pattern ends in "/{$}", and the other doesn't, nor is the other's
+			// corresponding segment a multi. So they are disjoint.
+			return disjoint
+		}
 		if s1.wild && s2.wild {
-			// These ordinary wildcards match each other.
+			// These single-segment wildcards match each other.
 		} else if s1.wild {
-			// p1's ordinary wildcard matches the first segment
-			// of p2's literal, or the rest of it.
-			_, s2.s = splitSegment(s2.s)
+			// p1's single wildcard matches the corresponding segment of p2.
 			wild1MatchedLit2 = true
 		} else if s2.wild {
-			_, s1.s = splitSegment(s1.s)
+			// p2's single wildcard matches the corresponding segment of p1.
 			wild2MatchedLit1 = true
 		} else {
-			// Two literals.
-			// Consume the common prefix, or fail.
-			i := len(s1.s)
-			if len(s1.s) > len(s2.s) {
-				i = len(s2.s)
-			}
-			if s1.s[:i] != s2.s[:i] {
+			// Two literal segments.
+			if s1.s != s2.s {
 				return disjoint
 			}
-			s1.s = s1.s[i:]
-			s2.s = s2.s[i:]
-		}
-		// If this segment is done, advance to the next.
-		if s1.wild || s1.s == "" {
-			segs1 = segs1[1:]
-		} else {
-			segs1[0].s = s1.s // Assign back into slice; s1 is a copy.
-		}
-		if s2.wild || s2.s == "" {
-			segs2 = segs2[1:]
-		} else {
-			segs2[0].s = s2.s
 		}
 	}
+	// We've reached the end of the corresponding segments of the patterns.
 	if len(segs1) == 0 && len(segs2) == 0 {
 		// The patterns matched completely.
 		if wild1MatchedLit2 && !wild2MatchedLit1 {
@@ -407,35 +386,10 @@ func (p1 *Pattern) comparePaths(p2 *Pattern) string {
 		}
 		return overlaps
 	}
-	if len(segs1) == 0 {
-		// p2 has at least one more segment.
-		// p1 did not end in a multi.
-		// That means p2's remaining segments must match nothing.
-		// Which means to match, there must be only one segment, a multi.
-		if !segs2[0].multi {
-			return disjoint
-		}
-		if !wild1MatchedLit2 {
-			return moreSpecific
-		}
-		return overlaps
-	}
-	// len(segs2) == 0
-	if !segs1[0].multi {
-		return disjoint
-	}
-	if !wild2MatchedLit1 {
-		return moreGeneral
-	}
-	return overlaps
-}
-
-func splitSegment(path string) (string, string) {
-	i := strings.IndexByte(path, '/')
-	if i < 0 {
-		return path, ""
-	}
-	return path[:i], path[i:]
+	// One pattern has more segments than the other.
+	// The only way they can fail to be disjoint is if one is multi,
+	// but we handled that case in the loop.
+	return disjoint
 }
 
 // A PatternSet is a set of non-conflicting patterns.
@@ -494,7 +448,7 @@ func (s *PatternSet) Match(method, host, path string) (*Pattern, map[string]stri
 func (p *Pattern) bind(matches []string) map[string]string {
 	bindings := make(map[string]string, len(matches))
 	i := 0
-	for _, seg := range p.elements {
+	for _, seg := range p.segments {
 		if seg.wild && seg.s != "" {
 			bindings[seg.s] = matches[i]
 			i++

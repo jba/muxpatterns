@@ -12,52 +12,6 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-func TestToSegments(t *testing.T) {
-	for _, test := range []struct {
-		in   string
-		want []segment
-	}{
-		{"/", []segment{{wild: true, multi: true}}},
-		{"/a/bc/d", []segment{
-			{s: "a"},
-			{s: "bc"},
-			{s: "d"},
-		}},
-		{"/a/{x}/b", []segment{
-			{s: "a"},
-			{wild: true},
-			{s: "b"},
-		}},
-		{"/a/{x}/b/{$}", []segment{
-			{s: "a"},
-			{wild: true},
-			{s: "b"},
-			{s: "/"},
-		}},
-		{"/a/{x}/b/{z...}", []segment{
-			{s: "a"},
-			{wild: true},
-			{s: "b"},
-			{wild: true, multi: true},
-		}},
-		{"/a/{x}/b/", []segment{
-			{s: "a"},
-			{wild: true},
-			{s: "b"},
-			{wild: true, multi: true},
-		}},
-	} {
-		p, err := Parse(test.in)
-		if err != nil {
-			t.Fatal(err)
-		}
-		got := p.toSegments()
-		if !slices.Equal(got, test.want) {
-			t.Errorf("%s:\ngot  %v\nwant %v", test.in, got, test.want)
-		}
-	}
-}
-
 func TestNextSegment(t *testing.T) {
 	for _, test := range []struct {
 		in   string
@@ -83,7 +37,14 @@ func TestNextSegment(t *testing.T) {
 // TODO: test host and method
 var testTree *node
 
-func init() {
+func getTestTree() *node {
+	if testTree == nil {
+		initTestTree()
+	}
+	return testTree
+}
+
+func initTestTree() {
 	testTree = &node{}
 	var ps PatternSet
 	for _, p := range []string{"/a", "/a/b", "/a/{x}",
@@ -117,7 +78,7 @@ func TestAddPattern(t *testing.T) {
                 "*":
                     "/a/b/{x...}"
                 "/":
-                    "/a/b/"
+                    "/a/b/{$}"
         "g":
             nil
             "":
@@ -131,7 +92,7 @@ func TestAddPattern(t *testing.T) {
 `
 
 	var b strings.Builder
-	testTree.print(&b, 0)
+	getTestTree().print(&b, 0)
 	got := b.String()
 	if got != want {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
@@ -148,13 +109,13 @@ func TestNodeMatch(t *testing.T) {
 		{"/b", "", nil},
 		{"/a/b", "/a/b", nil},
 		{"/a/c", "/a/{x}", []string{"c"}},
-		{"/a/b/", "/a/b/", nil},
+		{"/a/b/", "/a/b/{$}", nil},
 		{"/a/b/c", "/a/b/{y}", []string{"c"}},
 		{"/a/b/c/d", "/a/b/{x...}", []string{"c/d"}},
 		{"/g/h/i", "/g/h/i", nil},
 		{"/g/h/j", "/g/{x}/j", []string{"h"}},
 	} {
-		gotPat, gotMatches := testTree.match("GET", "", test.path)
+		gotPat, gotMatches := getTestTree().match("GET", "", test.path)
 		got := ""
 		if gotPat != nil {
 			got = gotPat.String()
