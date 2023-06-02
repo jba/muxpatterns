@@ -202,67 +202,6 @@ func isValidWildcardName(s string) bool {
 	return true
 }
 
-// // Match reports whether p matches the method, host and path.
-// // The method and host may be empty.
-// // The path must start with a '/'
-// // If the first return value is true, the second is the list of wildcard matches,
-// // in the order the wildcards occur in p.
-// //
-// // A wildcard other than "$" that does not end in "..." matches a non-empty
-// // path segment. So "/{x}" matches "/a" but not "/".
-// //
-// // A wildcard that ends in "..." can match the empty string, or a sequence of path segments.
-// // So "/{x...}" matches the paths "/", "/a", "/a/" and "/a/b". In each case, the string
-// // associated with "x" is the path with the initial slash removed.
-// //
-// // The wildcard "{$}" matches the empty string, but only after a final slash.
-// func (p *Pattern) Match(method, host, path string) (bool, []string) {
-// 	if len(path) == 0 || path[0] != '/' {
-// 		panic("path should start with '/'")
-// 	}
-// 	if len(p.elements) == 0 {
-// 		panic("pattern has no segments")
-// 	}
-
-// 	if p.method != "" && method != p.method {
-// 		return false, nil
-// 	}
-// 	if p.host != "" && host != p.host {
-// 		return false, nil
-// 	}
-// 	rest := path
-// 	var matches []string
-// 	for _, el := range p.elements {
-// 		if el.multi {
-// 			if el.s != "" {
-// 				matches = append(matches, rest)
-// 			}
-// 			rest = ""
-// 		} else if el.wild {
-// 			i := strings.IndexByte(rest, '/')
-// 			if i < 0 {
-// 				i = len(rest)
-// 			}
-// 			if i == 0 {
-// 				// Ordinary wildcard matching empty string.
-// 				return false, nil
-// 			}
-// 			matches = append(matches, rest[:i])
-// 			rest = rest[i:]
-// 		} else {
-// 			var found bool
-// 			rest, found = strings.CutPrefix(rest, el.s)
-// 			if !found {
-// 				return false, nil
-// 			}
-// 		}
-// 	}
-// 	if len(rest) > 0 {
-// 		return false, nil
-// 	}
-// 	return true, matches
-// }
-
 // HigherPrecedence reports whether p1 has higher precedence than p2.
 // If p1 and p2 both match a request, then p1 will be chosen.
 //
@@ -387,8 +326,8 @@ func (p1 *Pattern) comparePaths(p2 *Pattern) string {
 		return overlaps
 	}
 	// One pattern has more segments than the other.
-	// The only way they can fail to be disjoint is if one is multi,
-	// but we handled that case in the loop.
+	// The only way they can fail to be disjoint is if one ends in a multi, but
+	// we handled that case in the loop.
 	return disjoint
 }
 
@@ -497,4 +436,54 @@ func (s *Server) Handle(pattern string, handler http.Handler) {
 
 func (s *Server) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
 	s.Handle(pattern, http.HandlerFunc(handler))
+}
+
+func OverlapString(p1, p2 *Pattern) string {
+	var b strings.Builder
+
+	str := func(p *Pattern) {
+		for _, s := range p.segments {
+			b.WriteByte('/')
+			if s.s != "/" {
+				b.WriteString(s.s)
+			}
+		}
+	}
+
+	switch p1.comparePaths(p2) {
+	case disjoint:
+		return ""
+	case moreSpecific:
+		str(p1)
+	case moreGeneral:
+		str(p2)
+	default:
+		var segs1, segs2 []segment
+		for segs1, segs2 = p1.segments, p2.segments; len(segs1) > 1 && len(segs2) > 0; segs1, segs2 = segs1[1:], segs2[1:] {
+			b.WriteByte('/')
+			s1 := segs1[0]
+			s2 := segs2[0]
+			if s1.wild {
+				b.WriteString(s2.s)
+			} else {
+				b.WriteString(s1.s)
+			}
+		}
+		if len(segs1) > 0 {
+			for _, s := range segs1 {
+				b.WriteByte('/')
+				if s.s != "/" {
+					b.WriteString(s.s)
+				}
+			}
+		} else {
+			for _, s := range segs2 {
+				b.WriteByte('/')
+				if s.s != "/" {
+					b.WriteString(s.s)
+				}
+			}
+		}
+	}
+	return b.String()
 }
