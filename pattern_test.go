@@ -127,160 +127,10 @@ func (p1 *Pattern) equal(p2 *Pattern) bool {
 	return p1.method == p2.method && p1.host == p2.host && slices.Equal(p1.segments, p2.segments)
 }
 
-// func TestMatch(t *testing.T) {
-// 	for _, test := range []struct {
-// 		method      string
-// 		host        string
-// 		path        string
-// 		pattern     string
-// 		wantMatch   bool
-// 		wantMatches []string
-// 	}{
-// 		{
-// 			path:      "/",
-// 			pattern:   "/",
-// 			wantMatch: true,
-// 		},
-// 		{
-// 			method:    "GET",
-// 			path:      "/",
-// 			pattern:   "GET /",
-// 			wantMatch: true,
-// 		},
-// 		{
-// 			host:      "example.com",
-// 			path:      "/",
-// 			pattern:   "example.com/",
-// 			wantMatch: true,
-// 		},
-// 		{
-// 			method:    "TRACE",
-// 			host:      "example.com",
-// 			path:      "/",
-// 			pattern:   "TRACE example.com/",
-// 			wantMatch: true,
-// 		},
-// 		{
-// 			path:      "/foo/bar/baz",
-// 			pattern:   "/foo/bar/baz",
-// 			wantMatch: true,
-// 		},
-// 		{
-// 			path:      "/foo/bar/baz",
-// 			pattern:   "/foo/bar",
-// 			wantMatch: false,
-// 		},
-// 		{
-// 			path:      "/foo/bar",
-// 			pattern:   "/foo/bar/baz",
-// 			wantMatch: false,
-// 		},
-// 		{
-// 			// final slash is a like "{...}"
-// 			path:      "/foo/",
-// 			pattern:   "/foo/",
-// 			wantMatch: true,
-// 		},
-// 		{
-// 			path:      "/foo/bar/baz",
-// 			pattern:   "/foo/",
-// 			wantMatch: true,
-// 		},
-// 		{
-// 			path:        "/foo/bar/baz",
-// 			pattern:     "/{x}/",
-// 			wantMatch:   true,
-// 			wantMatches: []string{"foo"},
-// 		},
-// 		{
-// 			path:        "/foo/bar/baz/qux",
-// 			pattern:     "/foo/{a}/baz/{b}",
-// 			wantMatch:   true,
-// 			wantMatches: []string{"bar", "qux"},
-// 		},
-// 		{
-// 			pattern:     "/{x...}",
-// 			path:        "/",
-// 			wantMatch:   true,
-// 			wantMatches: []string{""},
-// 		},
-// 		{
-// 			pattern:     "/{x...}",
-// 			path:        "/a",
-// 			wantMatch:   true,
-// 			wantMatches: []string{"a"},
-// 		},
-// 		{
-// 			pattern:     "/{x...}",
-// 			path:        "/a/",
-// 			wantMatch:   true,
-// 			wantMatches: []string{"a/"},
-// 		},
-// 		{
-// 			pattern:     "/{x...}",
-// 			path:        "/a/b",
-// 			wantMatch:   true,
-// 			wantMatches: []string{"a/b"},
-// 		},
-// 		{
-// 			path:        "/foo/bar/baz/qux",
-// 			pattern:     "/foo/{a}/{b...}",
-// 			wantMatch:   true,
-// 			wantMatches: []string{"bar", "baz/qux"},
-// 		},
-// 		{
-// 			path:        "/foo/bar/17/qux/moo",
-// 			pattern:     "/foo/{a}/{n}/{b...}",
-// 			wantMatch:   true,
-// 			wantMatches: []string{"bar", "17", "qux/moo"},
-// 		},
-// 		{
-// 			// "..."  can match nothing
-// 			path:        "/foo/bar/17/",
-// 			pattern:     "/foo/{a}/{n}/{b...}",
-// 			wantMatch:   true,
-// 			wantMatches: []string{"bar", "17", ""},
-// 		},
-// 		{
-// 			path:      "/foo/bar/",
-// 			pattern:   "/foo/bar/{$}",
-// 			wantMatch: true,
-// 		},
-// 		{
-// 			path:      "/a",
-// 			pattern:   "/{$}",
-// 			wantMatch: false,
-// 		},
-// 		{
-// 			path:      "/a/",
-// 			pattern:   "/a",
-// 			wantMatch: false,
-// 		},
-// 		{
-// 			path:      "/a/",
-// 			pattern:   "/a/{x}",
-// 			wantMatch: false,
-// 		},
-// 	} {
-// 		pat, err := Parse(test.pattern)
-// 		if err != nil {
-// 			t.Fatal(err)
-// 		}
-// 		gotMatch, gotMatches := pat.Match(test.method, test.host, test.path)
-// 		if g, w := gotMatch, test.wantMatch; g != w {
-// 			t.Errorf("%q.Match(%q, %q, %q): got %t, want %t", pat, test.method, test.host, test.path, g, w)
-// 			return
-// 		}
-// 		if g, w := gotMatches, test.wantMatches; !reflect.DeepEqual(g, w) {
-// 			t.Errorf("matches: got %#v, want %#v", g, w)
-// 		}
-// 	}
-// }
-
 func TestComparePaths(t *testing.T) {
 	for _, test := range []struct {
 		p1, p2 string
-		want   string
+		want   relationship
 	}{
 		// TODO: verify we hit all these case below in our systematic list.
 		{"/a/{$}", "/a", disjoint},
@@ -289,9 +139,9 @@ func TestComparePaths(t *testing.T) {
 		{"/", "/{x}", moreGeneral},
 		{"/", "/{$}", moreGeneral},
 		{"/a/b/{x...}", "/a/b/c/d/{y...}", moreGeneral},
-		{"/a", "/a", overlaps},
+		{"/a", "/a", equivalent},
 		{"/a", "/ab", disjoint},
-		{"/{x}", "/{x}", overlaps},
+		{"/{x}", "/{y}", equivalent},
 		{"/a/{x...}", "/a/b/{x...}", moreGeneral},
 		{"/a/{$}", "/a/b/{x...}", disjoint},
 		{"/a/b/{$}", "/a/b/{x...}", moreSpecific},
@@ -299,7 +149,7 @@ func TestComparePaths(t *testing.T) {
 		{"/a/{x}/b/", "/{x}/c/{y...}", overlaps},
 		{"/a/{x}/b/{$}", "/{x}/c/{y...}", overlaps},
 		{"/a/{x...}", "/b/{y...}", disjoint},
-		{"/a/{x...}", "/a/{y...}", overlaps},
+		{"/a/{x...}", "/a/{y...}", equivalent},
 		{"/a/{z}/{x...}", "/a/b/{y...}", moreGeneral},
 		{"/a/{z}/{x...}", "/{z}/b/{y...}", overlaps},
 		{"/a/{x...}", "/a/{x}/{y...}", moreGeneral},
@@ -310,7 +160,7 @@ func TestComparePaths(t *testing.T) {
 		// wildcard. Trailing slash and multi wildcard are the same.
 
 		// A literal should be more specific than anything it overlaps, except itself.
-		{"/a", "/a", overlaps},
+		{"/a", "/a", equivalent},
 		{"/a", "/b", disjoint},
 		{"/a", "/", moreSpecific},
 		{"/a", "/{$}", disjoint},
@@ -318,13 +168,13 @@ func TestComparePaths(t *testing.T) {
 		{"/a", "/{x...}", moreSpecific},
 
 		// Adding a segment doesn't change that.
-		{"/b/a", "/b/a", overlaps},
+		{"/b/a", "/b/a", equivalent},
 		{"/b/a", "/b/b", disjoint},
 		{"/b/a", "/b/", moreSpecific},
 		{"/b/a", "/b/{$}", disjoint},
 		{"/b/a", "/b/{x}", moreSpecific},
 		{"/b/a", "/b/{x...}", moreSpecific},
-		{"/{z}/a", "/{z}/a", overlaps},
+		{"/{z}/a", "/{z}/a", equivalent},
 		{"/{z}/a", "/{z}/b", disjoint},
 		{"/{z}/a", "/{z}/", moreSpecific},
 		{"/{z}/a", "/{z}/{$}", disjoint},
@@ -335,13 +185,13 @@ func TestComparePaths(t *testing.T) {
 		{"/{z}", "/a", moreGeneral},
 		{"/{z}", "/a/b", disjoint},
 		{"/{z}", "/{$}", disjoint},
-		{"/{z}", "/{x}", overlaps},
+		{"/{z}", "/{x}", equivalent},
 		{"/{z}", "/", moreSpecific},
 		{"/{z}", "/{x...}", moreSpecific},
 		{"/b/{z}", "/b/a", moreGeneral},
 		{"/b/{z}", "/b/a/b", disjoint},
 		{"/b/{z}", "/b/{$}", disjoint},
-		{"/b/{z}", "/b/{x}", overlaps},
+		{"/b/{z}", "/b/{x}", equivalent},
 		{"/b/{z}", "/b/", moreSpecific},
 		{"/b/{z}", "/b/{x...}", moreSpecific},
 
@@ -350,23 +200,23 @@ func TestComparePaths(t *testing.T) {
 		{"/", "/a/b", moreGeneral},
 		{"/", "/{$}", moreGeneral},
 		{"/", "/{x}", moreGeneral},
-		{"/", "/", overlaps},
-		{"/", "/{x...}", overlaps},
+		{"/", "/", equivalent},
+		{"/", "/{x...}", equivalent},
 
 		{"/b/", "/b/a", moreGeneral},
 		{"/b/", "/b/a/b", moreGeneral},
 		{"/b/", "/b/{$}", moreGeneral},
 		{"/b/", "/b/{x}", moreGeneral},
-		{"/b/", "/b/", overlaps},
-		{"/b/", "/b/{x...}", overlaps},
+		{"/b/", "/b/", equivalent},
+		{"/b/", "/b/{x...}", equivalent},
 
 		{"/{z}/", "/{z}/a", moreGeneral},
 		{"/{z}/", "/{z}/a/b", moreGeneral},
 		{"/{z}/", "/{z}/{$}", moreGeneral},
 		{"/{z}/", "/{z}/{x}", moreGeneral},
-		{"/{z}/", "/{z}/", overlaps},
+		{"/{z}/", "/{z}/", equivalent},
 		{"/{z}/", "/a/", moreGeneral},
-		{"/{z}/", "/{z}/{x...}", overlaps},
+		{"/{z}/", "/{z}/{x...}", equivalent},
 		{"/{z}/", "/a/{x...}", moreGeneral},
 		{"/a/{z}/", "/{z}/a/", overlaps},
 
@@ -375,44 +225,44 @@ func TestComparePaths(t *testing.T) {
 		{"/{m...}", "/a/b", moreGeneral},
 		{"/{m...}", "/{$}", moreGeneral},
 		{"/{m...}", "/{x}", moreGeneral},
-		{"/{m...}", "/", overlaps},
-		{"/{m...}", "/{x...}", overlaps},
+		{"/{m...}", "/", equivalent},
+		{"/{m...}", "/{x...}", equivalent},
 
 		{"/b/{m...}", "/b/a", moreGeneral},
 		{"/b/{m...}", "/b/a/b", moreGeneral},
 		{"/b/{m...}", "/b/{$}", moreGeneral},
 		{"/b/{m...}", "/b/{x}", moreGeneral},
-		{"/b/{m...}", "/b/", overlaps},
-		{"/b/{m...}", "/b/{x...}", overlaps},
+		{"/b/{m...}", "/b/", equivalent},
+		{"/b/{m...}", "/b/{x...}", equivalent},
 
 		{"/{z}/{m...}", "/{z}/a", moreGeneral},
 		{"/{z}/{m...}", "/{z}/a/b", moreGeneral},
 		{"/{z}/{m...}", "/{z}/{$}", moreGeneral},
 		{"/{z}/{m...}", "/{z}/{x}", moreGeneral},
-		{"/{z}/{m...}", "/{z}/", overlaps},
+		{"/{z}/{m...}", "/{w}/", equivalent},
 		{"/{z}/{m...}", "/a/", moreGeneral},
-		{"/{z}/{m...}", "/{z}/{x...}", overlaps},
+		{"/{z}/{m...}", "/{z}/{x...}", equivalent},
 		{"/{z}/{m...}", "/a/{x...}", moreGeneral},
 		{"/a/{z}/{m...}", "/{z}/a/", overlaps},
 
 		// Dollar on left.
 		{"/{$}", "/a", disjoint},
 		{"/{$}", "/a/b", disjoint},
-		{"/{$}", "/{$}", overlaps},
+		{"/{$}", "/{$}", equivalent},
 		{"/{$}", "/{x}", disjoint},
 		{"/{$}", "/", moreSpecific},
 		{"/{$}", "/{x...}", moreSpecific},
 
 		{"/b/{$}", "/b/a", disjoint},
 		{"/b/{$}", "/b/a/b", disjoint},
-		{"/b/{$}", "/b/{$}", overlaps},
+		{"/b/{$}", "/b/{$}", equivalent},
 		{"/b/{$}", "/b/{x}", disjoint},
 		{"/b/{$}", "/b/", moreSpecific},
 		{"/b/{$}", "/b/{x...}", moreSpecific},
 
 		{"/{z}/{$}", "/{z}/a", disjoint},
 		{"/{z}/{$}", "/{z}/a/b", disjoint},
-		{"/{z}/{$}", "/{z}/{$}", overlaps},
+		{"/{z}/{$}", "/{z}/{$}", equivalent},
 		{"/{z}/{$}", "/{z}/{x}", disjoint},
 		{"/{z}/{$}", "/{z}/", moreSpecific},
 		{"/{z}/{$}", "/a/", overlaps},
@@ -428,17 +278,17 @@ func TestComparePaths(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if g := pat1.comparePaths(pat1); g != overlaps {
+		if g := pat1.comparePaths(pat1); g != equivalent {
 			t.Errorf("%s does not match itself; got %s", pat1, g)
 		}
-		if g := pat2.comparePaths(pat2); g != overlaps {
+		if g := pat2.comparePaths(pat2); g != equivalent {
 			t.Errorf("%s does not match itself; got %s", pat2, g)
 		}
 		got := pat1.comparePaths(pat2)
 		if got != test.want {
 			t.Errorf("%s vs %s: got %s, want %s", test.p1, test.p2, got, test.want)
 		}
-		var want2 string
+		var want2 relationship
 		switch test.want {
 		case moreSpecific:
 			want2 = moreGeneral

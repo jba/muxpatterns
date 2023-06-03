@@ -239,14 +239,19 @@ func (p1 *Pattern) ConflictsWith(p2 *Pattern) bool {
 		// Same reasoning as above, with rule 2.
 		return false
 	}
-	return p1.comparePaths(p2) == overlaps
+	rel := p1.comparePaths(p2)
+	return rel == equivalent || rel == overlaps
 }
 
+// relationship is a relationship between two patterns.
+type relationship string
+
 const (
-	moreSpecific = "moreSpecific"
-	moreGeneral  = "moreGeneral"
-	overlaps     = "overlaps"
-	disjoint     = "disjoint"
+	moreSpecific relationship = "moreSpecific"
+	moreGeneral  relationship = "moreGeneral"
+	overlaps     relationship = "overlaps"
+	equivalent   relationship = "equivalent"
+	disjoint     relationship = "disjoint"
 )
 
 // comparePaths classifies the paths of the patterns into one of four
@@ -256,7 +261,7 @@ const (
 //	moreSpecific: p2 matches all the paths of p1 and more
 //	overlaps: there is a path that both match, but neither is more specific
 //	disjoint: there is no path that both match
-func (p1 *Pattern) comparePaths(p2 *Pattern) string {
+func (p1 *Pattern) comparePaths(p2 *Pattern) relationship {
 	// Track whether a single (non-multi) wildcard in p1 matched
 	// a literal in p2, and vice versa.
 	// We care about these because if a wildcard matches a literal, then the
@@ -317,13 +322,16 @@ func (p1 *Pattern) comparePaths(p2 *Pattern) string {
 	// We've reached the end of the corresponding segments of the patterns.
 	if len(segs1) == 0 && len(segs2) == 0 {
 		// The patterns matched completely.
-		if wild1MatchedLit2 && !wild2MatchedLit1 {
+		switch {
+		case wild1MatchedLit2 && !wild2MatchedLit1:
 			return moreGeneral
-		}
-		if wild2MatchedLit1 && !wild1MatchedLit2 {
+		case wild2MatchedLit1 && !wild1MatchedLit2:
 			return moreSpecific
+		case !wild1MatchedLit2 && !wild2MatchedLit1:
+			return equivalent
+		default:
+			return overlaps
 		}
-		return overlaps
 	}
 	// One pattern has more segments than the other.
 	// The only way they can fail to be disjoint is if one ends in a multi, but
@@ -487,3 +495,15 @@ func OverlapString(p1, p2 *Pattern) string {
 	}
 	return b.String()
 }
+
+// If p1 is more general than p2, then this
+// returns a string that p1 matches and p2 doesn't.
+
+// func DifferenceString(p1, p2 *Pattern) string {
+// 	switch p1.comparePaths(p2) {
+// 	case disjoint, overlaps:
+// 		return ""
+// 	case moreSpecific:
+// 		p1, p2 = p2, p1
+// 	}
+// 	// Here, p1 is more general
