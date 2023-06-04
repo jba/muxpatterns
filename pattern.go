@@ -446,64 +446,152 @@ func (s *Server) HandleFunc(pattern string, handler func(http.ResponseWriter, *h
 	s.Handle(pattern, http.HandlerFunc(handler))
 }
 
-func OverlapString(p1, p2 *Pattern) string {
-	var b strings.Builder
+func DescribeRelationship(pat1, pat2 string) string {
+	p1, err := Parse(pat1)
+	if err != nil {
+		panic(err)
+	}
+	p2, err := Parse(pat2)
+	if err != nil {
+		panic(err)
+	}
+	// TODO: method and host
+	rel := p1.comparePaths(p2)
+	switch rel {
+	case disjoint:
+		return fmt.Sprintf("%s has no paths in common with %s.", pat1, pat2)
+	case equivalent:
+		return fmt.Sprintf("%s matches the same paths as %s.", pat1, pat2)
+	case moreSpecific:
+		over := matchingPath(p1)
+		diff := differencePath(p2, p1)
+		return fmt.Sprintf(`%s is more specific than %s.
+Both match %q.
+Only %[2]s matches %[4]q.`,
+			p1, p2, over, diff)
+	case moreGeneral:
+		over := matchingPath(p2)
+		diff := differencePath(p1, p2)
+		return fmt.Sprintf(`%s is more general than %s.
+Both match %q.
+Only %[1]s matches %[4]q.`,
+			p1, p2, over, diff)
+	default: // overlap
+		return fmt.Sprintf(`%[1]s and %[2]s both match some paths, like %[3]q.
+But neither is more specific than the other.
+%[1]s matches %[4]q, but %[2]s doesn't.
+%[2]s matches %[5]q, but %[1]s doesn't.`,
+			p1, p2, overlapPath(p1, p2), differencePath(p1, p2), differencePath(p2, p1))
+	}
+}
 
-	str := func(p *Pattern) {
-		for _, s := range p.segments {
-			b.WriteByte('/')
-			if s.s != "/" {
-				b.WriteString(s.s)
-			}
+func matchingPath(p *Pattern) string {
+	var b strings.Builder
+	writeMatchingPath(&b, p.segments)
+	return b.String()
+}
+
+// writeMatchingPath writes to b a path that matches the segments.
+func writeMatchingPath(b *strings.Builder, segs []segment) {
+	for _, s := range segs {
+		writeSegment(b, s)
+	}
+}
+
+func writeSegment(b *strings.Builder, s segment) {
+	b.WriteByte('/')
+	if !s.multi && s.s != "/" {
+		b.WriteString(s.s)
+	}
+}
+
+// overlapPath returns a path that both p1 and p2 match.
+// It assumes there is such a path.
+func overlapPath(p1, p2 *Pattern) string {
+	var b strings.Builder
+	var segs1, segs2 []segment
+	for segs1, segs2 = p1.segments, p2.segments; len(segs1) > 0 && len(segs2) > 0; segs1, segs2 = segs1[1:], segs2[1:] {
+		s1 := segs1[0]
+		s2 := segs2[0]
+		if s1.wild {
+			writeSegment(&b, s2)
+		} else {
+			writeSegment(&b, s1)
 		}
 	}
-
-	switch p1.comparePaths(p2) {
-	case disjoint:
-		return ""
-	case moreSpecific:
-		str(p1)
-	case moreGeneral:
-		str(p2)
-	default:
-		var segs1, segs2 []segment
-		for segs1, segs2 = p1.segments, p2.segments; len(segs1) > 1 && len(segs2) > 0; segs1, segs2 = segs1[1:], segs2[1:] {
-			b.WriteByte('/')
-			s1 := segs1[0]
-			s2 := segs2[0]
-			if s1.wild {
-				b.WriteString(s2.s)
-			} else {
-				b.WriteString(s1.s)
-			}
-		}
-		if len(segs1) > 0 {
-			for _, s := range segs1 {
-				b.WriteByte('/')
-				if s.s != "/" {
-					b.WriteString(s.s)
-				}
-			}
-		} else {
-			for _, s := range segs2 {
-				b.WriteByte('/')
-				if s.s != "/" {
-					b.WriteString(s.s)
-				}
-			}
-		}
+	if len(segs1) > 0 {
+		writeMatchingPath(&b, segs1)
+	} else if len(segs2) > 0 {
+		writeMatchingPath(&b, segs2)
 	}
 	return b.String()
 }
 
-// If p1 is more general than p2, then this
-// returns a string that p1 matches and p2 doesn't.
+// differencePath returns a path that p1 matches and p2 doesn't.
+// It assumes there is such a path.
+func differencePath(p1, p2 *Pattern) string {
+	b := new(strings.Builder)
 
-// func DifferenceString(p1, p2 *Pattern) string {
-// 	switch p1.comparePaths(p2) {
-// 	case disjoint, overlaps:
-// 		return ""
-// 	case moreSpecific:
-// 		p1, p2 = p2, p1
-// 	}
-// 	// Here, p1 is more general
+	var segs1, segs2 []segment
+	for segs1, segs2 = p1.segments, p2.segments; len(segs1) > 0 && len(segs2) > 0; segs1, segs2 = segs1[1:], segs2[1:] {
+		s1 := segs1[0]
+		s2 := segs2[0]
+		if s1.multi && s2.multi {
+			// From here the patterns match the same paths, so we must have found a difference earlier.
+			b.WriteByte('/')
+			return b.String()
+
+		}
+		if s1.multi && !s2.multi {
+			// s1 ends in a "..." wildcard but s2 does not.
+			// A trailing slash will distinguish them, unless s2 ends in "{$}",
+			// in which case any segment will do; prefer the wildcard name if
+			// it has one.
+			b.WriteByte('/')
+			if s2.s == "/" {
+				if s1.s != "" {
+					b.WriteString(s1.s)
+				} else {
+					b.WriteString("x")
+				}
+			}
+			return b.String()
+		}
+		if !s1.multi && s2.multi {
+			writeSegment(b, s1)
+		} else if s1.wild && s2.wild {
+			// Both patterns will match whatever we put here; use
+			// the first wildcard name.
+			writeSegment(b, s1)
+		} else if s1.wild && !s2.wild {
+			// s1 is a wildcard, s2 is a literal.
+			// Any segment other than s2.s will work.
+			// Prefer the wildcard name, but if it's the same as the literal,
+			// tweak the literal.
+			if s1.s != s2.s {
+				writeSegment(b, s1)
+			} else {
+				b.WriteByte('/')
+				b.WriteString(s2.s + "x")
+			}
+		} else if !s1.wild && s2.wild {
+			writeSegment(b, s1)
+		} else {
+			// Both are literals. A precondition of this function is that the
+			// patterns overlap, so they must be the same literal. Use it.
+			if s1.s != s2.s {
+				fmt.Printf("%q, %q\n", s1.s, s2.s)
+				panic("literals differ")
+			}
+			writeSegment(b, s1)
+		}
+	}
+	if len(segs1) > 0 {
+		// p1 is longer than p2, and p2 does not end in a multi.
+		// Anything that matches the rest of p1 will do.
+		writeMatchingPath(b, segs1)
+	} else if len(segs2) > 0 {
+		writeMatchingPath(b, segs2)
+	}
+	return b.String()
+}

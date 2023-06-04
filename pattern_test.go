@@ -82,10 +82,7 @@ func TestParse(t *testing.T) {
 			Pattern{segments: []segment{wild("a"), lit("foo"), multi("rest")}},
 		},
 	} {
-		got, err := Parse(test.in)
-		if err != nil {
-			t.Fatalf("%q: %v", test.in, err)
-		}
+		got := mustParse(t, test.in)
 		if !got.equal(&test.want) {
 			t.Errorf("%q:\ngot  %#v\nwant %#v", test.in, got, &test.want)
 		}
@@ -139,9 +136,6 @@ func TestComparePaths(t *testing.T) {
 		{"/", "/{x}", moreGeneral},
 		{"/", "/{$}", moreGeneral},
 		{"/a/b/{x...}", "/a/b/c/d/{y...}", moreGeneral},
-		{"/a", "/a", equivalent},
-		{"/a", "/ab", disjoint},
-		{"/{x}", "/{y}", equivalent},
 		{"/a/{x...}", "/a/b/{x...}", moreGeneral},
 		{"/a/{$}", "/a/b/{x...}", disjoint},
 		{"/a/b/{$}", "/a/b/{x...}", moreSpecific},
@@ -270,14 +264,8 @@ func TestComparePaths(t *testing.T) {
 		{"/{z}/{$}", "/{z}/{x...}", moreSpecific},
 		{"/a/{z}/{$}", "/{z}/a/", overlaps},
 	} {
-		pat1, err := Parse(test.p1)
-		if err != nil {
-			t.Fatal(err)
-		}
-		pat2, err := Parse(test.p2)
-		if err != nil {
-			t.Fatal(err)
-		}
+		pat1 := mustParse(t, test.p1)
+		pat2 := mustParse(t, test.p2)
 		if g := pat1.comparePaths(pat1); g != equivalent {
 			t.Errorf("%s does not match itself; got %s", pat1, g)
 		}
@@ -300,6 +288,78 @@ func TestComparePaths(t *testing.T) {
 		got2 := pat2.comparePaths(pat1)
 		if got2 != want2 {
 			t.Errorf("%s vs %s: got %s, want %s", test.p2, test.p1, got2, want2)
+		}
+	}
+}
+
+func TestOverlapPath(t *testing.T) {
+	for _, test := range []struct {
+		p1, p2 string
+		want   string
+	}{
+		{"/a/{x}", "/{x}/a", "/a/a"},
+		{"/a/{z}/", "/{z}/a/", "/a/a/"},
+		{"/a/{z}/{m...}", "/{z}/a/", "/a/a/"},
+		{"/{z}/{$}", "/a/", "/a/"},
+		{"/{z}/{$}", "/a/{x...}", "/a/"},
+		{"/a/{z}/{$}", "/{z}/a/", "/a/a/"},
+		{"/a/{x}/b/{y...}", "/{x}/c/{y...}", "/a/c/b/"},
+		{"/a/{x}/b/", "/{x}/c/{y...}", "/a/c/b/"},
+		{"/a/{x}/b/{$}", "/{x}/c/{y...}", "/a/c/b/"},
+		{"/a/{z}/{x...}", "/{z}/b/{y...}", "/a/b/"},
+	} {
+		pat1 := mustParse(t, test.p1)
+		pat2 := mustParse(t, test.p2)
+		if pat1.comparePaths(pat2) != overlaps {
+			t.Fatalf("%s does not overlap %s", test.p1, test.p2)
+		}
+		got := overlapPath(pat1, pat2)
+		if got != test.want {
+			t.Errorf("%s vs. %s: got %q, want %q", test.p1, test.p2, got, test.want)
+		}
+	}
+}
+
+func TestDifferencePath(t *testing.T) {
+	for _, test := range []struct {
+		p1, p2 string
+		want   string
+	}{
+		{"/a/{x}", "/{x}/a", "/a/x"},
+		{"/{x}/a", "/a/{x}", "/x/a"},
+		{"/a/{z}/", "/{z}/a/", "/a/z/"},
+		{"/{z}/a/", "/a/{z}/", "/z/a/"},
+		{"/{a}/a/", "/a/{z}/", "/ax/a/"},
+		{"/a/{z}/{x...}", "/{z}/b/{y...}", "/a/z/"},
+		{"/{z}/b/{y...}", "/a/{z}/{x...}", "/z/b/"},
+		{"/a/b/", "/a/b/c", "/a/b/"},
+		{"/a/b/{x...}", "/a/b/c", "/a/b/"},
+		{"/a/b/{x...}", "/a/b/c/d", "/a/b/"},
+		{"/a/b/{x...}", "/a/b/c/d/", "/a/b/"},
+		{"/a/{z}/{m...}", "/{z}/a/", "/a/z/"},
+		{"/{z}/a/", "/a/{z}/{m...}", "/z/a/"},
+		{"/{z}/{$}", "/a/", "/z/"},
+		{"/a/", "/{z}/{$}", "/a/x"},
+		{"/{z}/{$}", "/a/{x...}", "/z/"},
+		{"/a/{foo...}", "/{z}/{$}", "/a/foo"},
+		{"/a/{z}/{$}", "/{z}/a/", "/a/z/"},
+		{"/{z}/a/", "/a/{z}/{$}", "/z/a/x"},
+		{"/a/{x}/b/{y...}", "/{x}/c/{y...}", "/a/x/b/"},
+		{"/{x}/c/{y...}", "/a/{x}/b/{y...}", "/x/c/"},
+		{"/a/{c}/b/", "/{x}/c/{y...}", "/a/cx/b/"},
+		{"/{x}/c/{y...}", "/a/{c}/b/", "/x/c/"},
+		{"/a/{x}/b/{$}", "/{x}/c/{y...}", "/a/x/b/"},
+		{"/{x}/c/{y...}", "/a/{x}/b/{$}", "/x/c/"},
+	} {
+		pat1 := mustParse(t, test.p1)
+		pat2 := mustParse(t, test.p2)
+		rel := pat1.comparePaths(pat2)
+		if rel != overlaps && rel != moreGeneral {
+			t.Fatalf("%s vs. %s are %s, need overlaps or moreGeneral", pat1, pat2, rel)
+		}
+		got := differencePath(pat1, pat2)
+		if got != test.want {
+			t.Errorf("%s vs. %s: got %q, want %q", test.p1, test.p2, got, test.want)
 		}
 	}
 }
@@ -346,14 +406,8 @@ func TestHigherPrecedence(t *testing.T) {
 		// false
 		{"/{x}/{y}", "/{x}/a", false},
 	} {
-		pat1, err := Parse(test.p1)
-		if err != nil {
-			t.Fatal(err)
-		}
-		pat2, err := Parse(test.p2)
-		if err != nil {
-			t.Fatal(err)
-		}
+		pat1 := mustParse(t, test.p1)
+		pat2 := mustParse(t, test.p2)
 		got := pat1.HigherPrecedence(pat2)
 		if got != test.want {
 			t.Errorf("%q.HigherPrecedence(%q) = %t, want %t",
@@ -384,14 +438,8 @@ func TestConflictsWith(t *testing.T) {
 		{"/{x}/{y}/{$}", "/{x}/a/{$}", false},
 		{"/a/{x}", "/{x}/b", true},
 	} {
-		pat1, err := Parse(test.p1)
-		if err != nil {
-			t.Fatal(err)
-		}
-		pat2, err := Parse(test.p2)
-		if err != nil {
-			t.Fatal(err)
-		}
+		pat1 := mustParse(t, test.p1)
+		pat2 := mustParse(t, test.p2)
 		got := pat1.ConflictsWith(pat2)
 		if got != test.want {
 			t.Errorf("%q.ConflictsWith(%q) = %t, want %t",
@@ -420,10 +468,7 @@ func TestPatternSetMatch(t *testing.T) {
 		"POST alt.com/item/{userp}",
 		"/path/{p...}",
 	} {
-		pat, err := Parse(p)
-		if err != nil {
-			t.Fatal(err)
-		}
+		pat := mustParse(t, p)
 		if err := ps.Register(pat); err != nil {
 			t.Fatal(err)
 		}
@@ -466,128 +511,6 @@ func TestPatternSetMatch(t *testing.T) {
 				t.Errorf("got %v\nwant %v", got, test.want)
 			}
 		})
-	}
-}
-
-func TestOverlapString(t *testing.T) {
-	for _, test := range []struct {
-		p1, p2 string
-		want   string
-	}{
-		{"/a", "/a", "/a"},
-		{"/a", "/b", ""},
-		{"/a", "/", "/a"},
-		{"/a", "/{$}", ""},
-		{"/a", "/{x}", "/a"},
-		{"/a", "/{x...}", "/a"},
-
-		// Adding a segment doesn't change that.
-		{"/b/a", "/b/a", "/b/a"},
-		{"/b/a", "/b/b", ""},
-		{"/b/a", "/b/", "/b/a"},
-		{"/b/a", "/b/{$}", ""},
-		{"/b/a", "/b/{x}", "/b/a"},
-		{"/b/a", "/b/{x...}", "/b/a"},
-		{"/{z}/a", "/{z}/a", "/z/a"},
-		{"/{z}/a", "/{z}/b", ""},
-		{"/{z}/a", "/{z}/", "/z/a"},
-		{"/{z}/a", "/{z}/{$}", ""},
-		{"/{z}/a", "/{z}/{x}", "/z/a"},
-		{"/{z}/a", "/{z}/{x...}", "/z/a"},
-
-		// Single wildcard on left.
-		{"/{z}", "/a", "/a"},
-		{"/{z}", "/a/b", ""},
-		{"/{z}", "/{$}", ""},
-		{"/{z}", "/{x}", "/z"},
-		{"/{z}", "/", "/z"},
-		{"/{z}", "/{x...}", "/z"},
-		{"/b/{z}", "/b/a", "/b/a"},
-		{"/b/{z}", "/b/a/b", ""},
-		{"/b/{z}", "/b/{$}", ""},
-		{"/b/{z}", "/b/{x}", "/b/z"},
-		{"/b/{z}", "/b/", "/b/z"},
-		{"/b/{z}", "/b/{x...}", "/b/z"},
-
-		// Trailing slash on left.
-		{"/", "/a", "/a"},
-		{"/", "/a/b", "/a/b"},
-		{"/", "/{$}", "/"},
-		{"/", "/{x}", "/x"},
-		{"/", "/", "/"},
-		{"/", "/{x...}", "/"},
-
-		{"/b/", "/b/a", "/b/a"},
-		{"/b/", "/b/a/b", "/b/a/b"},
-		{"/b/", "/b/{$}", "/b/"},
-		{"/b/", "/b/{x}", "/b/x"},
-		{"/b/", "/b/", "/b/"},
-		{"/b/", "/b/{x...}", "/b/"},
-
-		{"/{z}/", "/{z}/a", "/z/a"},
-		{"/{z}/", "/{z}/a/b", "/z/a/b"},
-		{"/{z}/", "/{z}/{$}", "/z/"},
-		{"/{z}/", "/{z}/{x}", "/z/x"},
-		{"/{z}/", "/{z}/", "/z/"},
-		{"/{z}/", "/a/", "/a/"},
-		{"/{z}/", "/{z}/{x...}", "/z/"},
-		{"/{z}/", "/a/{x...}", "/a/x"},
-		{"/a/{z}/", "/{z}/a/", "/a/a/"},
-
-		// Multi wildcard on left.
-		{"/{m...}", "/a", "/a"},
-		{"/{m...}", "/a/b", "/a/b"},
-		{"/{m...}", "/{$}", "/"},
-		{"/{m...}", "/{x}", "/x"},
-		{"/{m...}", "/", "/m"},
-		{"/{m...}", "/{x...}", "/m"},
-
-		{"/b/{m...}", "/b/a", "/b/a"},
-		{"/b/{m...}", "/b/a/b", "/b/a/b"},
-		{"/b/{m...}", "/b/{$}", "/b/"},
-		{"/b/{m...}", "/b/{x}", "/b/x"},
-		{"/b/{m...}", "/b/", "/b/m"},
-		{"/b/{m...}", "/b/{x...}", "/b/m"},
-
-		{"/{z}/{m...}", "/{z}/a", "/z/a"},
-		{"/{z}/{m...}", "/{z}/a/b", "/z/a/b"},
-		{"/{z}/{m...}", "/{z}/{$}", "/z/"},
-		{"/{z}/{m...}", "/{z}/{x}", "/z/x"},
-		{"/{z}/{m...}", "/{z}/", "/z/m"},
-		{"/{z}/{m...}", "/a/", "/a/"},
-		{"/{z}/{m...}", "/{z}/{x...}", "/z/m"},
-		{"/{z}/{m...}", "/a/{x...}", "/a/x"},
-		{"/a/{z}/{m...}", "/{z}/a/", "/a/a/m"},
-
-		// Dollar on left.
-		{"/{$}", "/a", ""},
-		{"/{$}", "/a/b", ""},
-		{"/{$}", "/{$}", "/"},
-		{"/{$}", "/{x}", ""},
-		{"/{$}", "/", "/"},
-		{"/{$}", "/{x...}", "/"},
-
-		{"/b/{$}", "/b/a", ""},
-		{"/b/{$}", "/b/a/b", ""},
-		{"/b/{$}", "/b/{$}", "/b/"},
-		{"/b/{$}", "/b/{x}", ""},
-		{"/b/{$}", "/b/", "/b/"},
-		{"/b/{$}", "/b/{x...}", "/b/"},
-
-		{"/{z}/{$}", "/{z}/a", ""},
-		{"/{z}/{$}", "/{z}/a/b", ""},
-		{"/{z}/{$}", "/{z}/{$}", "/z/"},
-		{"/{z}/{$}", "/{z}/{x}", ""},
-		{"/{z}/{$}", "/{z}/", "/z/"},
-		{"/{z}/{$}", "/a/", "/a/"},
-		{"/{z}/{$}", "/a/{x...}", "/a/"},
-		{"/{z}/{$}", "/{z}/{x...}", "/z/"},
-		{"/a/{z}/{$}", "/{z}/a/", "/a/a/"},
-	} {
-		got := OverlapString(mustParse(t, test.p1), mustParse(t, test.p2))
-		if got != test.want {
-			t.Errorf("OverlapString(%q, %q) = %q, want %q", test.p1, test.p2, got, test.want)
-		}
 	}
 }
 
