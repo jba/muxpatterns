@@ -3,6 +3,7 @@ package muxpatterns
 import (
 	"fmt"
 	"maps"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -511,6 +512,38 @@ func TestPatternSetMatch(t *testing.T) {
 				t.Errorf("got %v\nwant %v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestRegisterConflict(t *testing.T) {
+	var ps PatternSet
+	pat1 := "/a/{x}/"
+	p1 := mustParse(t, pat1)
+	if err := ps.Register(p1); err != nil {
+		t.Fatal(err)
+	}
+	pat2 := "/a/{y}/{z...}"
+	p2 := mustParse(t, pat2)
+	err := ps.Register(p2)
+	var got string
+	if err == nil {
+		got = "<nil>"
+	} else {
+		got = err.Error()
+	}
+	q1 := regexp.QuoteMeta(pat1)
+	q2 := regexp.QuoteMeta(pat2)
+	wantre := `pattern "` + q2 +
+		`" \(registered at .*/pattern_test.go:\d+\) conflicts with pattern "` +
+		q1 +
+		`" \(registered at .*/pattern_test.go:\d+\):
+` + q2 + ` matches the same paths as ` + q1
+	m, err := regexp.MatchString(wantre, got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m {
+		t.Errorf("got\n%s\nwant\n%s", got, wantre)
 	}
 }
 

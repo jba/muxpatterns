@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync"
 	"unicode"
@@ -343,27 +344,43 @@ func (p1 *Pattern) comparePaths(p2 *Pattern) relationship {
 // The zero value is an empty PatternSet, ready for use.
 type PatternSet struct {
 	mu       sync.Mutex
-	patterns []*Pattern
+	patterns []patEntry
 	tree     *node
 	nobind   bool // for benchmarking
+}
+
+type patEntry struct {
+	pat *Pattern
+	loc string // file:line of call to Register
 }
 
 // Register adds a Pattern to the set. If returns an error
 // if the pattern conflicts with an existing pattern in the set.
 func (s *PatternSet) Register(p *Pattern) error {
+	loc := callerLocation()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, q := range s.patterns {
-		if p.ConflictsWith(q) {
-			return fmt.Errorf("new pattern %s conflicts with existing pattern %s", p, q)
+	for _, e := range s.patterns {
+		if p.ConflictsWith(e.pat) {
+			d := describeRel(p, e.pat)
+			return fmt.Errorf("pattern %q (registered at %s) conflicts with pattern %q (registered at %s):\n%s",
+				p, loc, e.pat, e.loc, d)
 		}
 	}
-	s.patterns = append(s.patterns, p)
+	s.patterns = append(s.patterns, patEntry{p, loc})
 	if s.tree == nil {
 		s.tree = &node{}
 	}
 	s.tree.addPattern(p)
 	return nil
+}
+
+func callerLocation() string {
+	_, file, line, ok := runtime.Caller(2) // caller's caller
+	if !ok {
+		return "unknown location"
+	}
+	return fmt.Sprintf("%s:%d", file, line)
 }
 
 // MatchRequest calls Match with the request's method, host and path.
@@ -446,6 +463,8 @@ func (s *Server) HandleFunc(pattern string, handler func(http.ResponseWriter, *h
 	s.Handle(pattern, http.HandlerFunc(handler))
 }
 
+// DescribeRelationship returns a string that describes how pat1 and pat2
+// are related, in terms of the paths they match.
 func DescribeRelationship(pat1, pat2 string) string {
 	p1, err := Parse(pat1)
 	if err != nil {
@@ -455,13 +474,17 @@ func DescribeRelationship(pat1, pat2 string) string {
 	if err != nil {
 		panic(err)
 	}
+	return describeRel(p1, p2)
+}
+
+func describeRel(p1, p2 *Pattern) string {
 	// TODO: method and host
 	rel := p1.comparePaths(p2)
 	switch rel {
 	case disjoint:
-		return fmt.Sprintf("%s has no paths in common with %s.", pat1, pat2)
+		return fmt.Sprintf("%s has no paths in common with %s.", p1, p2)
 	case equivalent:
-		return fmt.Sprintf("%s matches the same paths as %s.", pat1, pat2)
+		return fmt.Sprintf("%s matches the same paths as %s.", p1, p2)
 	case moreSpecific:
 		over := matchingPath(p1)
 		diff := differencePath(p2, p1)
