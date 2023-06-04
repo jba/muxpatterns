@@ -414,27 +414,30 @@ func callerLocation() string {
 }
 
 func (mux *ServeMux) Handler(r *http.Request) (h http.Handler, pattern string) {
-	// TODO: copy http.ServeMux handler code
-	h, p, _ := mux.handler(r.Method, r.URL.Host, r.URL.Path)
-	var ps string
-	if p != nil {
-		ps = p.String()
-	}
-	return h, ps
+	h, p, _ := mux.handlerCopiedFromNetHTTP(r)
+	return h, p
 }
 
-func (mux *ServeMux) handler(method, host, path string) (h http.Handler, p *Pattern, matches []string) {
+func (mux *ServeMux) handler(method, host, path string) (h http.Handler, p string, matches []string) {
 	mux.mu.RLock()
 	defer mux.mu.RUnlock()
 	n, matches := mux.tree.match(method, host, path)
 	if n == nil {
-		return http.NotFoundHandler(), nil, nil
+		return http.NotFoundHandler(), "", nil
 	}
-	return n.handler, n.pattern, matches
+	return n.handler, n.pattern.String(), matches
 }
 
 func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h, _, matches := mux.handler(r.Method, r.URL.Host, r.URL.Path)
+	// This if statement copied from net/http/server.go.
+	if r.RequestURI == "*" {
+		if r.ProtoAtLeast(1, 1) {
+			w.Header().Set("Connection", "close")
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	h, _, matches := mux.handlerCopiedFromNetHTTP(r)
 	_ = matches // TODO
 	h.ServeHTTP(w, r)
 }

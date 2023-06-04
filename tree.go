@@ -103,6 +103,7 @@ func (n *node) findChild(key string) *node {
 	return n.children.get(key)
 }
 
+// TODO: version without matches for ServeMux.shouldRedirect.
 func (root *node) match(method, host, path string) (*node, []string) {
 	if host != "" {
 		if c := root.findChild(host); c != nil {
