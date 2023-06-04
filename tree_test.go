@@ -39,26 +39,23 @@ var testTree *node
 
 func getTestTree() *node {
 	if testTree == nil {
-		initTestTree()
+		testTree = buildTree("/a", "/a/b", "/a/{x}",
+			"/g/h/i", "/g/{x}/j",
+			"/a/b/{x...}", "/a/b/{y}", "/a/b/{$}")
 	}
 	return testTree
 }
 
-func initTestTree() {
-	testTree = &node{}
-	var ps PatternSet
-	for _, p := range []string{"/a", "/a/b", "/a/{x}",
-		"/g/h/i", "/g/{x}/j",
-		"/a/b/{x...}", "/a/b/{y}", "/a/b/{$}"} {
+func buildTree(pats ...string) *node {
+	root := &node{}
+	for _, p := range pats {
 		pat, err := Parse(p)
 		if err != nil {
 			panic(err)
 		}
-		if err := ps.Register(pat); err != nil {
-			panic(err)
-		}
-		testTree.addPattern(pat)
+		root.addPattern(pat, nil, "")
 	}
+	return root
 }
 
 func TestAddPattern(t *testing.T) {
@@ -99,34 +96,62 @@ func TestAddPattern(t *testing.T) {
 	}
 }
 
+type testCase struct {
+	method, host, path string
+	wantPat            string // "" for nil
+	wantMatches        []string
+}
+
 func TestNodeMatch(t *testing.T) {
-	for _, test := range []struct {
-		path        string
-		wantPat     string // "" for nil
-		wantMatches []string
-	}{
-		{"/a", "/a", nil},
-		{"/b", "", nil},
-		{"/a/b", "/a/b", nil},
-		{"/a/c", "/a/{x}", []string{"c"}},
-		{"/a/b/", "/a/b/{$}", nil},
-		{"/a/b/c", "/a/b/{y}", []string{"c"}},
-		{"/a/b/c/d", "/a/b/{x...}", []string{"c/d"}},
-		{"/g/h/i", "/g/h/i", nil},
-		{"/g/h/j", "/g/{x}/j", []string{"h"}},
-	} {
-		gotPat, gotMatches := getTestTree().match("GET", "", test.path)
-		got := ""
-		if gotPat != nil {
-			got = gotPat.String()
-		}
-		if got != test.wantPat {
-			t.Errorf("%s: got %q, want %q", test.path, got, test.wantPat)
-		}
-		if !slices.Equal(gotMatches, test.wantMatches) {
-			t.Errorf("%s: got matches %v, want %v", test.path, gotMatches, test.wantMatches)
+
+	test := func(tree *node, tests []testCase) {
+		for _, test := range tests {
+			gotNode, gotMatches := tree.match("GET", "", test.path)
+			got := ""
+			if gotNode != nil {
+				got = gotNode.pattern.String()
+			}
+			if got != test.wantPat {
+				t.Errorf("%s, %s, %s: got %q, want %q", test.method, test.host, test.path, got, test.wantPat)
+			}
+			if !slices.Equal(gotMatches, test.wantMatches) {
+				t.Errorf("%s, %s, %s: got matches %v, want %v", test.method, test.host, test.path, gotMatches, test.wantMatches)
+			}
 		}
 	}
+
+	test(getTestTree(), []testCase{
+		{"GET", "", "/a", "/a", nil},
+		{"Get", "", "/b", "", nil},
+		{"Get", "", "/a/b", "/a/b", nil},
+		{"Get", "", "/a/c", "/a/{x}", []string{"c"}},
+		{"Get", "", "/a/b/", "/a/b/{$}", nil},
+		{"Get", "", "/a/b/c", "/a/b/{y}", []string{"c"}},
+		{"Get", "", "/a/b/c/d", "/a/b/{x...}", []string{"c/d"}},
+		{"Get", "", "/g/h/i", "/g/h/i", nil},
+		{"Get", "", "/g/h/j", "/g/{x}/j", []string{"h"}},
+	})
+
+	tree := buildTree("/item/",
+		"POST /item/{user}",
+		"/item/{user}",
+		"/item/{user}/{id}",
+		"/item/{user}/new",
+		"/item/{$}",
+		"POST alt.com/item/{userp}",
+		"/path/{p...}")
+	test(tree, []testCase{
+		{"GET", "", "/item/jba",
+			"/item/{user}", []string{"jba"}},
+		// {"POST", "", "/item/jba/17", []string{"jba", "17"}},
+		// {"GET", "", "/item/jba/new", []string{"jba"}},
+		// {"GET", "", "/item/", []string{}},
+		// {"GET", "", "/item/jba/17/line2",nil},
+		// {"POST", "alt.com", "/item/jba", []string{"jba"}},
+		// {"GET", "alt.com", "/item/jba", []string{"jba"}},
+		// {"GET", "", "/item", nil}, // does not match
+		// {"GET", "", "/path/to/file", []string{"to/file"}},
+	})
 }
 
 func findChildLinear(key string, entries []entry) *node {

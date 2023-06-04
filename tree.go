@@ -7,25 +7,24 @@ package muxpatterns
 import (
 	"fmt"
 	"io"
+	"net/http"
 	"sort"
 	"strings"
 
 	"golang.org/x/exp/maps"
 )
 
-type entry struct {
-	key   string
-	child *node
-}
-
 type node struct {
 	// special children keys:
 	//     "/"	trailing slash
 	//	   ""   single wildcard
 	//	   "*"  multi wildcard
-	children   *hybrid  // map[string]*node // interior node
-	emptyChild *node    // child with key ""
-	pat        *Pattern // leaf
+	children   *hybrid // map[string]*node // interior node
+	emptyChild *node   // child with key ""
+	// leaf fields
+	pattern  *Pattern
+	handler  http.Handler
+	location string // source location of registering call
 }
 
 // returns segment, "/" for trailing slash, or "" for done.
@@ -42,21 +41,18 @@ func nextSegment(path string) (seg, rest string) {
 	return path[:i], path[i:]
 }
 
-func (root *node) addPattern(p *Pattern) {
+func (root *node) addPattern(p *Pattern, h http.Handler, loc string) {
 	// First level of tree is host.
 	n := root.addChild(p.host)
 	// Second level of tree is method.
 	n = n.addChild(p.method)
 	// Remaining levels are path.
-	n.addSegments(p.segments, p)
+	n.addSegments(p.segments, p, h, loc)
 }
 
-func (n *node) addSegments(segs []segment, p *Pattern) {
+func (n *node) addSegments(segs []segment, p *Pattern, h http.Handler, loc string) {
 	if len(segs) == 0 {
-		if n.pat != nil {
-			panic("n.pat != nil")
-		}
-		n.pat = p
+		n.set(p, h, loc)
 		return
 	}
 	seg := segs[0]
@@ -68,12 +64,21 @@ func (n *node) addSegments(segs []segment, p *Pattern) {
 			panic("dup multi wildcards")
 		}
 		c := n.addChild("*")
-		c.pat = p
+		c.set(p, h, loc)
 	} else if seg.wild {
-		n.addChild("").addSegments(segs[1:], p)
+		n.addChild("").addSegments(segs[1:], p, h, loc)
 	} else {
-		n.addChild(seg.s).addSegments(segs[1:], p)
+		n.addChild(seg.s).addSegments(segs[1:], p, h, loc)
 	}
+}
+
+func (n *node) set(p *Pattern, h http.Handler, loc string) {
+	if n.pattern != nil || n.handler != nil {
+		panic("non-nil leaf fields")
+	}
+	n.pattern = p
+	n.handler = h
+	n.location = loc
 }
 
 func (n *node) addChild(key string) *node {
@@ -98,7 +103,7 @@ func (n *node) findChild(key string) *node {
 	return n.children.get(key)
 }
 
-func (root *node) match(method, host, path string) (*Pattern, []string) {
+func (root *node) match(method, host, path string) (*node, []string) {
 	if host != "" {
 		if c := root.findChild(host); c != nil {
 			if p, m := c.matchMethodAndPath(method, path); p != nil {
@@ -112,7 +117,7 @@ func (root *node) match(method, host, path string) (*Pattern, []string) {
 	return nil, nil
 }
 
-func (n *node) matchMethodAndPath(method, path string) (*Pattern, []string) {
+func (n *node) matchMethodAndPath(method, path string) (*node, []string) {
 	if method == "" {
 		panic("empty method")
 	}
@@ -127,36 +132,53 @@ func (n *node) matchMethodAndPath(method, path string) (*Pattern, []string) {
 	return nil, nil
 }
 
-func (n *node) matchPath(path string, matches []string) (*Pattern, []string) {
-	// If path is empty, then return the node's pattern, which
-	// may be nil.
+func (n *node) matchPath(path string, matches []string) (*node, []string) {
+	// If path is empty, then return the node, whose pattern may be nil.
 	if path == "" {
-		return n.pat, matches
+		if n.pattern == nil {
+			return nil, nil
+		}
+		return n, matches
 	}
 	seg, rest := nextSegment(path)
 	if c := n.findChild(seg); c != nil {
-		if p, m := c.matchPath(rest, matches); p != nil {
-			return p, m
+		if n, m := c.matchPath(rest, matches); n != nil {
+			return n, m
 		}
 	}
 	// Match single wildcard.
 	if c := n.emptyChild; c != nil {
-		if p, m := c.matchPath(rest, append(matches, seg)); p != nil {
-			return p, m
+		if n, m := c.matchPath(rest, append(matches, seg)); n != nil {
+			return n, m
 		}
 	}
 	// Match multi wildcard to the rest of the pattern.
 	if c := n.findChild("*"); c != nil {
-		return c.pat, append(matches, path[1:]) // remove initial slash
+		return c, append(matches, path[1:]) // remove initial slash
 	}
 	return nil, nil
+}
+
+func (n *node) patterns(f func(*Pattern, http.Handler, string) error) error {
+	if n == nil {
+		return nil
+	}
+	if n.pattern != nil {
+		return f(n.pattern, n.handler, n.location)
+	}
+	if n.emptyChild != nil {
+		if err := n.emptyChild.patterns(f); err != nil {
+			return err
+		}
+	}
+	return n.children.patterns(f)
 }
 
 // Modifies n; use for testing only.
 func (n *node) print(w io.Writer, level int) {
 	indent := strings.Repeat("    ", level)
-	if n.pat != nil {
-		fmt.Fprintf(w, "%s%q\n", indent, n.pat)
+	if n.pattern != nil {
+		fmt.Fprintf(w, "%s%q\n", indent, n.pattern)
 	} else {
 		fmt.Fprintf(w, "%snil\n", indent)
 	}
@@ -178,6 +200,11 @@ type hybrid struct {
 	maxSlice int
 	s        []entry
 	m        map[string]*node
+}
+
+type entry struct {
+	key   string
+	child *node
 }
 
 func newHybrid(ms int) *hybrid {
@@ -228,4 +255,24 @@ func (h *hybrid) keys() []string {
 		keys = append(keys, e.key)
 	}
 	return keys
+}
+
+func (h *hybrid) patterns(f func(*Pattern, http.Handler, string) error) error {
+	if h == nil {
+		return nil
+	}
+	if h.m != nil {
+		for _, n := range h.m {
+			if err := n.patterns(f); err != nil {
+				return err
+			}
+		}
+	} else {
+		for _, e := range h.s {
+			if err := e.child.patterns(f); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

@@ -1,8 +1,6 @@
 package muxpatterns
 
 import (
-	"fmt"
-	"maps"
 	"regexp"
 	"strings"
 	"testing"
@@ -457,74 +455,14 @@ func TestConflictsWith(t *testing.T) {
 	}
 }
 
-func TestPatternSetMatch(t *testing.T) {
-	var ps PatternSet
-	for _, p := range []string{
-		"/item/",
-		"POST /item/{user}",
-		"/item/{user}",
-		"/item/{user}/{id}",
-		"/item/{user}/new",
-		"/item/{$}",
-		"POST alt.com/item/{userp}",
-		"/path/{p...}",
-	} {
-		pat := mustParse(t, p)
-		if err := ps.Register(pat); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	for _, test := range []struct {
-		method, host, path string
-		want               map[string]string // nil -> no match, empty -> match
-	}{
-		{"GET", "", "/item/jba",
-			map[string]string{"user": "jba"}},
-		{"POST", "", "/item/jba/17",
-			map[string]string{"user": "jba", "id": "17"}},
-		{"GET", "", "/item/jba/new",
-			map[string]string{"user": "jba"}},
-		{"GET", "", "/item/",
-			map[string]string{}}, // matches with no bindings
-		{"GET", "", "/item/jba/17/line2",
-			map[string]string{}}, // matches with no bindings
-		{"POST", "alt.com", "/item/jba",
-			map[string]string{"userp": "jba"}},
-		{"GET", "alt.com", "/item/jba",
-			map[string]string{"user": "jba"}},
-		{"GET", "", "/item", nil}, // does not match
-		{"GET", "", "/path/to/file",
-			map[string]string{"p": "to/file"}},
-	} {
-		if test.host == "" {
-			test.host = "example.com"
-		}
-		t.Run(fmt.Sprintf("%s,%s,%s", test.method, test.host, test.path), func(t *testing.T) {
-			p, got := ps.Match(test.method, test.host, test.path)
-			if p == nil {
-				if test.want != nil {
-					t.Error("got no match, wanted match")
-				}
-				return
-			}
-			if !maps.Equal(got, test.want) {
-				t.Errorf("got %v\nwant %v", got, test.want)
-			}
-		})
-	}
-}
-
 func TestRegisterConflict(t *testing.T) {
-	var ps PatternSet
+	mux := NewServeMux()
 	pat1 := "/a/{x}/"
-	p1 := mustParse(t, pat1)
-	if err := ps.Register(p1); err != nil {
+	if err := mux.register(pat1, nil); err != nil {
 		t.Fatal(err)
 	}
 	pat2 := "/a/{y}/{z...}"
-	p2 := mustParse(t, pat2)
-	err := ps.Register(p2)
+	err := mux.register(pat2, nil)
 	var got string
 	if err == nil {
 		got = "<nil>"

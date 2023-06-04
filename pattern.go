@@ -340,72 +340,6 @@ func (p1 *Pattern) comparePaths(p2 *Pattern) relationship {
 	return disjoint
 }
 
-// A PatternSet is a set of non-conflicting patterns.
-// The zero value is an empty PatternSet, ready for use.
-type PatternSet struct {
-	mu       sync.Mutex
-	patterns []patEntry
-	tree     *node
-	nobind   bool // for benchmarking
-}
-
-type patEntry struct {
-	pat *Pattern
-	loc string // file:line of call to Register
-}
-
-// Register adds a Pattern to the set. If returns an error
-// if the pattern conflicts with an existing pattern in the set.
-func (s *PatternSet) Register(p *Pattern) error {
-	loc := callerLocation()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, e := range s.patterns {
-		if p.ConflictsWith(e.pat) {
-			d := describeRel(p, e.pat)
-			return fmt.Errorf("pattern %q (registered at %s) conflicts with pattern %q (registered at %s):\n%s",
-				p, loc, e.pat, e.loc, d)
-		}
-	}
-	s.patterns = append(s.patterns, patEntry{p, loc})
-	if s.tree == nil {
-		s.tree = &node{}
-	}
-	s.tree.addPattern(p)
-	return nil
-}
-
-func callerLocation() string {
-	_, file, line, ok := runtime.Caller(2) // caller's caller
-	if !ok {
-		return "unknown location"
-	}
-	return fmt.Sprintf("%s:%d", file, line)
-}
-
-// MatchRequest calls Match with the request's method, host and path.
-func (s *PatternSet) MatchRequest(req *http.Request) (*Pattern, map[string]string) {
-	return s.Match(req.Method, req.URL.Host, req.URL.Path)
-}
-
-// Match matches the method, host and path against the patterns in the PatternSet.
-// It returns the highest-precedence matching pattern and a map from wildcard
-// names to matching path segments.
-// Match returns (nil, nil, nil) if there is no matching pattern.
-func (s *PatternSet) Match(method, host, path string) (*Pattern, map[string]string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	pat, matches := s.tree.match(method, host, path)
-	if pat != nil {
-		if s.nobind {
-			return pat, nil
-		}
-		return pat, pat.bind(matches)
-	}
-	return nil, nil
-}
-
 // bind returns a map from wildcard names to matched, decoded values.
 // matches is a list of matched substrings in the order that non-empty wildcards
 // appear in the Pattern.
@@ -421,46 +355,88 @@ func (p *Pattern) bind(matches []string) map[string]string {
 	return bindings
 }
 
-type Server struct {
-	mu       sync.RWMutex
-	ps       PatternSet
-	handlers map[*Pattern]http.Handler
-	tree     *node
+// ServeMux is an HTTP request multiplexer.
+// It behaves like [net/http.ServeMux], but using the enhanced patterns
+// of this package.
+type ServeMux struct {
+	mu   sync.RWMutex
+	tree *node
 }
 
-// ServeHTTP makes a PatternSet implement the http.Handler interface. This is
-// just for benchmarking with
-// github.com/julienschmidt/go-http-routing-benchmark.
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	pat, _ := s.ps.MatchRequest(r)
-	s.mu.RLock()
-	h := s.handlers[pat]
-	s.mu.RUnlock()
-	if h == nil {
-		h = http.NotFoundHandler()
+func NewServeMux() *ServeMux {
+	return &ServeMux{}
+}
+
+func (mux *ServeMux) Handle(pattern string, handler http.Handler) {
+	if err := mux.register(pattern, handler); err != nil {
+		panic(err)
 	}
-	h.ServeHTTP(w, r)
 }
 
-func (s *Server) Handle(pattern string, handler http.Handler) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.ps.nobind = true
+func (mux *ServeMux) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
+	if err := mux.register(pattern, http.HandlerFunc(handler)); err != nil {
+		panic(err)
+	}
+}
+
+func (mux *ServeMux) register(pattern string, handler http.Handler) error {
+	loc := callerLocation()
+	mux.mu.Lock()
+	defer mux.mu.Unlock()
 	pat, err := Parse(pattern)
 	if err != nil {
-		panic(err)
+		return err
 	}
-	if err := s.ps.Register(pat); err != nil {
-		panic(err)
+	// Check for conflict.
+	if err := mux.tree.patterns(func(pat2 *Pattern, _ http.Handler, loc2 string) error {
+		if pat.ConflictsWith(pat2) {
+			d := describeRel(pat, pat2)
+			return fmt.Errorf("pattern %q (registered at %s) conflicts with pattern %q (registered at %s):\n%s",
+				pat, loc, pat2, loc2, d)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
-	if s.handlers == nil {
-		s.handlers = map[*Pattern]http.Handler{}
+	if mux.tree == nil {
+		mux.tree = &node{}
 	}
-	s.handlers[pat] = handler
+	mux.tree.addPattern(pat, handler, loc)
+	return nil
 }
 
-func (s *Server) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
-	s.Handle(pattern, http.HandlerFunc(handler))
+func callerLocation() string {
+	_, file, line, ok := runtime.Caller(2) // caller's caller's caller
+	if !ok {
+		return "unknown location"
+	}
+	return fmt.Sprintf("%s:%d", file, line)
+}
+
+func (mux *ServeMux) Handler(r *http.Request) (h http.Handler, pattern string) {
+	// TODO: copy http.ServeMux handler code
+	h, p, _ := mux.handler(r.Method, r.URL.Host, r.URL.Path)
+	var ps string
+	if p != nil {
+		ps = p.String()
+	}
+	return h, ps
+}
+
+func (mux *ServeMux) handler(method, host, path string) (h http.Handler, p *Pattern, matches []string) {
+	mux.mu.RLock()
+	defer mux.mu.RUnlock()
+	n, matches := mux.tree.match(method, host, path)
+	if n == nil {
+		return http.NotFoundHandler(), nil, nil
+	}
+	return n.handler, n.pattern, matches
+}
+
+func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h, _, matches := mux.handler(r.Method, r.URL.Host, r.URL.Path)
+	_ = matches // TODO
+	h.ServeHTTP(w, r)
 }
 
 // DescribeRelationship returns a string that describes how pat1 and pat2
