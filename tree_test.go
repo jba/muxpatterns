@@ -207,9 +207,9 @@ func BenchmarkFindChild(b *testing.B) {
 	}
 	for _, n := range []int{2, 4, 8, 16, 32} {
 		list := children[:n]
-		b.Run(strconv.Itoa(n), func(b *testing.B) {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
 
-			b.Run("linear", func(b *testing.B) {
+			b.Run("rep=linear", func(b *testing.B) {
 				var entries []entry
 				for _, c := range list {
 					entries = append(entries, entry{c, nil})
@@ -219,7 +219,7 @@ func BenchmarkFindChild(b *testing.B) {
 					findChildLinear(key, entries)
 				}
 			})
-			b.Run("map", func(b *testing.B) {
+			b.Run("rep=map", func(b *testing.B) {
 				m := map[string]*node{}
 				for _, c := range list {
 					m[c] = nil
@@ -231,7 +231,7 @@ func BenchmarkFindChild(b *testing.B) {
 				}
 				_ = x
 			})
-			b.Run("hybrid", func(b *testing.B) {
+			b.Run(fmt.Sprintf("rep=hybrid%d", maxSlice), func(b *testing.B) {
 				var h mapping
 				for _, c := range list {
 					h.add(c, nil)
