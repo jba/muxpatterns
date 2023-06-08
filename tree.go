@@ -2,29 +2,34 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// This file implements a decision tree for fast
+// matching of requests to patterns.
+
 package muxpatterns
 
 import (
-	"fmt"
-	"io"
 	"net/http"
-	"sort"
 	"strings"
 
 	"golang.org/x/exp/maps"
 )
 
+// A node is a node in the decision tree.
+// The same struct is used for leaf and interior nodes.
 type node struct {
+	// A leaf node holds a single pattern and the Handler it was registered
+	// with.
+	pattern  *Pattern
+	handler  http.Handler
+	location string // source location of registering call, for helpful messages
+
+	// An interior node maps parts of the incoming request to child nodes.
 	// special children keys:
 	//     "/"	trailing slash
 	//	   ""   single wildcard
 	//	   "*"  multi wildcard
-	children   *hybrid // map[string]*node // interior node
-	emptyChild *node   // child with key ""
-	// leaf fields
-	pattern  *Pattern
-	handler  http.Handler
-	location string // source location of registering call
+	children   *mapping
+	emptyChild *node // optimization: child with key ""
 }
 
 // returns segment, "/" for trailing slash, or "" for done.
@@ -93,14 +98,14 @@ func (n *node) addChild(key string) *node {
 	}
 	c := &node{}
 	if n.children == nil {
-		n.children = newHybrid(8)
+		n.children = &mapping{}
 	}
 	n.children.add(key, c)
 	return c
 }
 
 func (n *node) findChild(key string) *node {
-	return n.children.get(key)
+	return n.children.find(key)
 }
 
 // TODO: version without matches for ServeMux.shouldRedirect.
@@ -175,32 +180,13 @@ func (n *node) patterns(f func(*Pattern, http.Handler, string) error) error {
 	return n.children.patterns(f)
 }
 
-// Modifies n; use for testing only.
-func (n *node) print(w io.Writer, level int) {
-	indent := strings.Repeat("    ", level)
-	if n.pattern != nil {
-		fmt.Fprintf(w, "%s%q\n", indent, n.pattern)
-	} else {
-		fmt.Fprintf(w, "%snil\n", indent)
-	}
-	if n.emptyChild != nil {
-		fmt.Fprintf(w, "%s%q:\n", indent, "")
-		n.emptyChild.print(w, level+1)
-	}
-
-	keys := n.children.keys()
-	sort.Strings(keys)
-
-	for _, k := range keys {
-		fmt.Fprintf(w, "%s%q:\n", indent, k)
-		n.children.get(k).print(w, level+1)
-	}
-}
-
-type hybrid struct {
-	maxSlice int
-	s        []entry
-	m        map[string]*node
+// A mapping is a set of key-value pairs.
+// An zero mapping is empty and ready to use.
+//
+// Mappings try to pick a representation that makes lookup most efficient.
+type mapping struct {
+	s []entry          // for few pairs
+	m map[string]*node // for many pairs
 }
 
 type entry struct {
@@ -208,14 +194,13 @@ type entry struct {
 	child *node
 }
 
-func newHybrid(ms int) *hybrid {
-	return &hybrid{
-		maxSlice: ms,
-	}
-}
+// maxSlice is the maximum number of pairs for which a slice is used.
+// It is a variable for benchmarking.
+var maxSlice int = 8
 
-func (h *hybrid) add(k string, v *node) {
-	if h.m == nil && len(h.s) < h.maxSlice {
+// add adds a key-value pair to the mapping.
+func (h *mapping) add(k string, v *node) {
+	if h.m == nil && len(h.s) < maxSlice {
 		h.s = append(h.s, entry{k, v})
 	} else {
 		if h.m == nil {
@@ -229,7 +214,9 @@ func (h *hybrid) add(k string, v *node) {
 	}
 }
 
-func (h *hybrid) get(k string) *node {
+// find returns the value corresponding to the given key,
+// or nil if it is not present.
+func (h *mapping) find(k string) *node {
 	if h == nil {
 		return nil
 	}
@@ -244,7 +231,8 @@ func (h *hybrid) get(k string) *node {
 	return nil
 }
 
-func (h *hybrid) keys() []string {
+// keys returns all the keys in the mapping.
+func (h *mapping) keys() []string {
 	if h == nil {
 		return nil
 	}
@@ -258,7 +246,7 @@ func (h *hybrid) keys() []string {
 	return keys
 }
 
-func (h *hybrid) patterns(f func(*Pattern, http.Handler, string) error) error {
+func (h *mapping) patterns(f func(*Pattern, http.Handler, string) error) error {
 	if h == nil {
 		return nil
 	}

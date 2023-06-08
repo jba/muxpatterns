@@ -5,6 +5,9 @@
 package muxpatterns
 
 import (
+	"fmt"
+	"io"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -228,15 +231,15 @@ func BenchmarkFindChild(b *testing.B) {
 				}
 				_ = x
 			})
-			b.Run("hybrid8", func(b *testing.B) {
-				h := newHybrid(8)
+			b.Run("hybrid", func(b *testing.B) {
+				var h mapping
 				for _, c := range list {
 					h.add(c, nil)
 				}
 				var x *node
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					x = h.get(key)
+					x = h.find(key)
 				}
 				_ = x
 			})
@@ -245,16 +248,19 @@ func BenchmarkFindChild(b *testing.B) {
 }
 
 func TestHybrid(t *testing.T) {
-	nodes := []*node{&node{}, &node{}, &node{}, &node{}, &node{}}
-	h := newHybrid(4)
-	for i := 0; i < 4; i++ {
+	var nodes []*node
+	for i := 0; i < maxSlice; i++ {
+		nodes = append(nodes, &node{})
+	}
+	var h mapping
+	for i := 0; i < maxSlice; i++ {
 		h.add(strconv.Itoa(i), nodes[i])
 	}
 	if h.m != nil {
 		t.Fatal("h.m != nil")
 	}
-	for i := 0; i < 4; i++ {
-		g := h.get(strconv.Itoa(i))
+	for i := 0; i < maxSlice; i++ {
+		g := h.find(strconv.Itoa(i))
 		if g != nodes[i] {
 			t.Fatalf("%d: different", i)
 		}
@@ -266,7 +272,29 @@ func TestHybrid(t *testing.T) {
 	if h.m == nil {
 		t.Fatal("h.m == nil")
 	}
-	if g := h.get("4"); g != nodes[4] {
+	if g := h.find("4"); g != nodes[4] {
 		t.Fatal("4 diff")
+	}
+}
+
+// Modifies n; use for testing only.
+func (n *node) print(w io.Writer, level int) {
+	indent := strings.Repeat("    ", level)
+	if n.pattern != nil {
+		fmt.Fprintf(w, "%s%q\n", indent, n.pattern)
+	} else {
+		fmt.Fprintf(w, "%snil\n", indent)
+	}
+	if n.emptyChild != nil {
+		fmt.Fprintf(w, "%s%q:\n", indent, "")
+		n.emptyChild.print(w, level+1)
+	}
+
+	keys := n.children.keys()
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		fmt.Fprintf(w, "%s%q:\n", indent, k)
+		n.children.find(k).print(w, level+1)
 	}
 }

@@ -255,9 +255,9 @@ const (
 	disjoint     relationship = "disjoint"
 )
 
-// comparePaths classifies the paths of the patterns into one of four
-// groups:
+// comparePaths determines the relationship between two patterns:
 //
+//	equivalent: p1 and p2 match the same paths
 //	moreGeneral: p1 matches all the paths of p2 and more
 //	moreSpecific: p2 matches all the paths of p1 and more
 //	overlaps: there is a path that both match, but neither is more specific
