@@ -378,6 +378,8 @@ func TestHigherPrecedence(t *testing.T) {
 		{"GET /", "/", true},
 		{"/", "GET /", false},
 		{"GET /", "POST /", false},
+		{"GET /", "/foo", false},
+		{"/foo", "GET /", false},
 
 		// 3. more specific path
 		{"/", "/", false},
@@ -437,6 +439,10 @@ func TestConflictsWith(t *testing.T) {
 		{"/{x}/{y}", "/{x}/a/{$}", false},      // more specific
 		{"/{x}/{y}/{$}", "/{x}/a/{$}", false},
 		{"/a/{x}", "/{x}/b", true},
+		{"/", "GET /", false},
+		{"/", "GET /foo", false},
+		{"GET /", "GET /foo", false},
+		{"GET /", "/foo", true},
 	} {
 		pat1 := mustParse(t, test.p1)
 		pat2 := mustParse(t, test.p2)
@@ -444,8 +450,6 @@ func TestConflictsWith(t *testing.T) {
 		if got != test.want {
 			t.Errorf("%q.ConflictsWith(%q) = %t, want %t",
 				test.p1, test.p2, got, test.want)
-			t.Logf("segs1: %#v", pat1.segments)
-			t.Logf("segs2: %#v", pat2.segments)
 		}
 		// ConflictsWith should be commutative.
 		got = pat2.ConflictsWith(pat1)
@@ -463,7 +467,7 @@ func TestRegisterConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 	pat2 := "/a/{y}/{z...}"
-	err := mux.register(pat2, nil)
+	err := mux.register(pat2, http.NotFoundHandler())
 	var got string
 	if err == nil {
 		got = "<nil>"

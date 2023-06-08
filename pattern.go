@@ -207,21 +207,16 @@ func isValidWildcardName(s string) bool {
 // Precedence is defined by these rules:
 //
 //  1. Patterns with a host win over patterns without a host.
-//  2. Patterns with a method win over patterns without a method.
-//  3. Patterns whose path is more specific win. One path pattern is more
-//     specific than another if the second matches all the paths of the
-//     first and more.
+//  2. Patterns whose method and path is more specific win. One pattern is more
+//     specific than another if the second matches all the (method, path) pairs
+//     of the first and more.
 func (p1 *Pattern) HigherPrecedence(p2 *Pattern) bool {
 	// 1. Patterns with a host win over patterns without a host.
 	if (p1.host == "") != (p2.host == "") {
 		return p1.host != ""
 	}
-	// 2. Patterns with a method win over patterns without a method.
-	if (p1.method == "") != (p2.method == "") {
-		return p1.method != ""
-	}
-	// 3. More specific paths win.
-	return p1.comparePaths(p2) == moreSpecific
+	// 2. More specific (method, path)s win.
+	return p1.comparePathsAndMethods(p2) == moreSpecific
 }
 
 // ConflictsWith reports whether p1 conflicts with p2, that is, whether
@@ -230,15 +225,11 @@ func (p1 *Pattern) HigherPrecedence(p2 *Pattern) bool {
 func (p1 *Pattern) ConflictsWith(p2 *Pattern) bool {
 	if p1.host != p2.host {
 		// Either one host is empty and the other isn't, in which case the
-		// one with the host is more specific by rule 1, or neither host is empty
+		// one with the host wins by rule 1, or neither host is empty
 		// and they differ, so they won't match the same paths.
 		return false
 	}
-	if p1.method != p2.method {
-		// Same reasoning as above, with rule 2.
-		return false
-	}
-	rel := p1.comparePaths(p2)
+	rel := p1.comparePathsAndMethods(p2)
 	return rel == equivalent || rel == overlaps
 }
 
@@ -252,6 +243,50 @@ const (
 	equivalent   relationship = "equivalent"
 	disjoint     relationship = "disjoint"
 )
+
+func (p1 *Pattern) comparePathsAndMethods(p2 *Pattern) relationship {
+	switch {
+	case p1.method == p2.method:
+		// Methods are equivalent; path determines relationship
+		return p1.comparePaths(p2)
+	case p1.method == "":
+		// p1's method is more general than p2's.
+		switch rel := p1.comparePaths(p2); rel {
+		case equivalent:
+			return moreGeneral
+		case moreSpecific:
+			return overlaps
+		default:
+			return rel
+		}
+	case p2.method == "":
+		// The dual of the above.
+		switch rel := p1.comparePaths(p2); rel {
+		case equivalent:
+			return moreSpecific
+		case moreGeneral:
+			return overlaps
+		default:
+			return rel
+		}
+	default:
+		// Different non-empty methods
+		return disjoint
+	}
+}
+
+func (p1 *Pattern) compareMethods(p2 *Pattern) relationship {
+	if p1.method == p2.method {
+		return equivalent
+	}
+	if p1.method == "" {
+		return moreGeneral
+	}
+	if p2.method == "" {
+		return moreSpecific
+	}
+	return disjoint
+}
 
 // comparePaths determines the relationship between two patterns:
 //
