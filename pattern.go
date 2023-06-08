@@ -14,9 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"runtime"
 	"strings"
-	"sync"
 	"unicode"
 
 	"golang.org/x/exp/slices"
@@ -353,93 +351,6 @@ func (p *Pattern) bind(matches []string) map[string]string {
 		}
 	}
 	return bindings
-}
-
-// ServeMux is an HTTP request multiplexer.
-// It behaves like [net/http.ServeMux], but using the enhanced patterns
-// of this package.
-type ServeMux struct {
-	mu   sync.RWMutex
-	tree *node
-}
-
-func NewServeMux() *ServeMux {
-	return &ServeMux{}
-}
-
-func (mux *ServeMux) Handle(pattern string, handler http.Handler) {
-	if err := mux.register(pattern, handler); err != nil {
-		panic(err)
-	}
-}
-
-func (mux *ServeMux) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
-	if err := mux.register(pattern, http.HandlerFunc(handler)); err != nil {
-		panic(err)
-	}
-}
-
-func (mux *ServeMux) register(pattern string, handler http.Handler) error {
-	loc := callerLocation()
-	mux.mu.Lock()
-	defer mux.mu.Unlock()
-	pat, err := Parse(pattern)
-	if err != nil {
-		return err
-	}
-	// Check for conflict.
-	if err := mux.tree.patterns(func(pat2 *Pattern, _ http.Handler, loc2 string) error {
-		if pat.ConflictsWith(pat2) {
-			d := describeRel(pat, pat2)
-			return fmt.Errorf("pattern %q (registered at %s) conflicts with pattern %q (registered at %s):\n%s",
-				pat, loc, pat2, loc2, d)
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-	if mux.tree == nil {
-		mux.tree = &node{}
-	}
-	mux.tree.addPattern(pat, handler, loc)
-	return nil
-}
-
-func callerLocation() string {
-	_, file, line, ok := runtime.Caller(2) // caller's caller's caller
-	if !ok {
-		return "unknown location"
-	}
-	return fmt.Sprintf("%s:%d", file, line)
-}
-
-func (mux *ServeMux) Handler(r *http.Request) (h http.Handler, pattern string) {
-	h, p, _ := mux.handlerCopiedFromNetHTTP(r)
-	return h, p
-}
-
-func (mux *ServeMux) handler(method, host, path string) (h http.Handler, p string, matches []string) {
-	mux.mu.RLock()
-	defer mux.mu.RUnlock()
-	n, matches := mux.tree.match(method, host, path)
-	if n == nil {
-		return http.NotFoundHandler(), "", nil
-	}
-	return n.handler, n.pattern.String(), matches
-}
-
-func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// This if statement copied from net/http/server.go.
-	if r.RequestURI == "*" {
-		if r.ProtoAtLeast(1, 1) {
-			w.Header().Set("Connection", "close")
-		}
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	h, _, matches := mux.handlerCopiedFromNetHTTP(r)
-	_ = matches // TODO
-	h.ServeHTTP(w, r)
 }
 
 // DescribeRelationship returns a string that describes how pat1 and pat2

@@ -2,20 +2,118 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// The code in this file was copied from net/http/server.go.
+// ServeMux and related code.
+// Much of this is copied from net/http/server.go.
 
 package muxpatterns
 
 import (
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"path"
+	"runtime"
 	"strings"
+	"sync"
 )
 
-func (mux *ServeMux) handlerCopiedFromNetHTTP(r *http.Request) (h http.Handler, pattern string, matches []string) {
+// ServeMux is an HTTP request multiplexer.
+// It behaves like [net/http.ServeMux], but using the enhanced patterns
+// of this package.
+type ServeMux struct {
+	mu   sync.RWMutex
+	tree *node
+}
 
+func NewServeMux() *ServeMux {
+	return &ServeMux{}
+}
+
+func (mux *ServeMux) Handle(pattern string, handler http.Handler) {
+	if err := mux.register(pattern, handler); err != nil {
+		panic(err)
+	}
+}
+
+func (mux *ServeMux) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
+	// Does not call Handle so that we retrieve the right source location in ServeMux.register.
+	if err := mux.register(pattern, http.HandlerFunc(handler)); err != nil {
+		panic(err)
+	}
+}
+
+func (mux *ServeMux) register(pattern string, handler http.Handler) error {
+	if pattern == "" {
+		return errors.New("http: invalid pattern")
+	}
+	if handler == nil {
+		return errors.New("http: nil handler")
+	}
+	loc := callerLocation()
+	mux.mu.Lock()
+	defer mux.mu.Unlock()
+	pat, err := Parse(pattern)
+	if err != nil {
+		return err
+	}
+	// Check for conflict.
+	if err := mux.tree.patterns(func(pat2 *Pattern, _ http.Handler, loc2 string) error {
+		if pat.ConflictsWith(pat2) {
+			d := describeRel(pat, pat2)
+			return fmt.Errorf("pattern %q (registered at %s) conflicts with pattern %q (registered at %s):\n%s",
+				pat, loc, pat2, loc2, d)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if mux.tree == nil {
+		mux.tree = &node{}
+	}
+	mux.tree.addPattern(pat, handler, loc)
+	return nil
+}
+
+func callerLocation() string {
+	_, file, line, ok := runtime.Caller(2) // caller's caller's caller
+	if !ok {
+		return "unknown location"
+	}
+	return fmt.Sprintf("%s:%d", file, line)
+}
+
+func (mux *ServeMux) Handler(r *http.Request) (h http.Handler, pattern string) {
+	h, p, _ := mux.handler(r)
+	return h, p
+}
+
+func (mux *ServeMux) findHandler(method, host, path string) (h http.Handler, p string, matches []string) {
+	mux.mu.RLock()
+	defer mux.mu.RUnlock()
+	n, matches := mux.tree.match(method, host, path)
+	if n == nil {
+		return http.NotFoundHandler(), "", nil
+	}
+	return n.handler, n.pattern.String(), matches
+}
+
+func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// This if statement copied from net/http/server.go.
+	if r.RequestURI == "*" {
+		if r.ProtoAtLeast(1, 1) {
+			w.Header().Set("Connection", "close")
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	h, _, matches := mux.handler(r)
+	_ = matches // TODO
+	h.ServeHTTP(w, r)
+}
+
+func (mux *ServeMux) handler(r *http.Request) (h http.Handler, pattern string, matches []string) {
 	// CONNECT requests are not canonicalized.
 	if r.Method == "CONNECT" {
 		// If r.URL.Path is /tree and its handler is not registered,
@@ -25,7 +123,7 @@ func (mux *ServeMux) handlerCopiedFromNetHTTP(r *http.Request) (h http.Handler, 
 			return http.RedirectHandler(u.String(), http.StatusMovedPermanently), u.Path, nil
 		}
 
-		return mux.handler(r.Method, r.Host, r.URL.Path)
+		return mux.findHandler(r.Method, r.Host, r.URL.Path)
 	}
 
 	// All other requests have any port stripped and path cleaned
@@ -40,12 +138,12 @@ func (mux *ServeMux) handlerCopiedFromNetHTTP(r *http.Request) (h http.Handler, 
 	}
 
 	if path != r.URL.Path {
-		_, pattern, _ = mux.handler(r.Method, host, path)
+		_, pattern, _ = mux.findHandler(r.Method, host, path)
 		u := &url.URL{Path: path, RawQuery: r.URL.RawQuery}
 		return http.RedirectHandler(u.String(), http.StatusMovedPermanently), pattern, nil
 	}
 
-	return mux.handler(r.Method, host, r.URL.Path)
+	return mux.findHandler(r.Method, host, r.URL.Path)
 }
 
 // cleanPath returns the canonical path for p, eliminating . and .. elements.
@@ -107,14 +205,19 @@ func (mux *ServeMux) redirectToPathSlash(method, host, path string, u *url.URL) 
 func (mux *ServeMux) shouldRedirectRLocked(method, host, path string) bool {
 	// BEGIN CHANGE
 	// TODO: This is a second lookup for every matching path that doesn't end in '/'. Avoid.
+	// If path matches a pattern exactly, not via a multi, then don't redirect.
 	if n, _ := mux.tree.match(method, host, path); n != nil {
-		return false
+		segs := n.pattern.segments
+		if !segs[len(segs)-1].multi {
+			return false
+		}
 	}
 	// TODO: this will succeed if "/path/{$}" is registered, as well as "/path/". Do we want that?
 	// If not, it's not so easy to fix: if both are registered, the first will be returned in this
 	// case, masking the second; and the redirect will find the first. I don't think we can
 	// do anything about this.
 	n, _ := mux.tree.match(method, host, path+"/")
-	return n != nil
+	nSegs := strings.Count(path, "/")
+	return n != nil && len(n.pattern.segments) > nSegs
 	// END CHANGE
 }

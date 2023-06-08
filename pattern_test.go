@@ -1,6 +1,7 @@
 package muxpatterns
 
 import (
+	"net/http"
 	"regexp"
 	"strings"
 	"testing"
@@ -458,7 +459,7 @@ func TestConflictsWith(t *testing.T) {
 func TestRegisterConflict(t *testing.T) {
 	mux := NewServeMux()
 	pat1 := "/a/{x}/"
-	if err := mux.register(pat1, nil); err != nil {
+	if err := mux.register(pat1, http.NotFoundHandler()); err != nil {
 		t.Fatal(err)
 	}
 	pat2 := "/a/{y}/{z...}"
