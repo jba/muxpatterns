@@ -10,8 +10,6 @@ package muxpatterns
 import (
 	"net/http"
 	"strings"
-
-	"golang.org/x/exp/maps"
 )
 
 // A node is a node in the decision tree.
@@ -175,94 +173,11 @@ func (n *node) patterns(f func(*Pattern, http.Handler, string) error) error {
 			return err
 		}
 	}
-	return n.children.patterns(f)
-}
 
-// A mapping is a set of key-value pairs.
-// An zero mapping is empty and ready to use.
-//
-// Mappings try to pick a representation that makes find most efficient.
-type mapping[K comparable, V any] struct {
-	s []entry[K, V] // for few pairs
-	m map[K]V       // for many pairs
-}
-
-type entry[K comparable, V any] struct {
-	key   K
-	child V
-}
-
-// maxSlice is the maximum number of pairs for which a slice is used.
-// It is a variable for benchmarking.
-var maxSlice int = 8
-
-// add adds a key-value pair to the mapping.
-func (h *mapping[K, V]) add(k K, v V) {
-	if h.m == nil && len(h.s) < maxSlice {
-		h.s = append(h.s, entry[K, V]{k, v})
-	} else {
-		if h.m == nil {
-			h.m = map[K]V{}
-			for _, e := range h.s {
-				h.m[e.key] = e.child
-			}
-			h.s = nil
+	return n.children.pairs(func(_ string, n *node) error {
+		if err := n.patterns(f); err != nil {
+			return err
 		}
-		h.m[k] = v
-	}
-}
-
-// find returns the value corresponding to the given key.
-// The second return value is false if there is no value
-// with that key.
-func (h *mapping[K, V]) find(k K) (v V, found bool) {
-	if h == nil {
-		return v, false
-	}
-	if h.m != nil {
-		v, found = h.m[k]
-		return v, found
-	}
-	for _, e := range h.s {
-		if e.key == k {
-			return e.child, true
-		}
-	}
-	return v, false
-}
-
-// keys returns all the keys in the mapping.
-func (h *mapping[K, V]) keys() []K {
-	if h == nil {
 		return nil
-	}
-	if h.m != nil {
-		return maps.Keys(h.m)
-	}
-	var keys []K
-	for _, e := range h.s {
-		keys = append(keys, e.key)
-	}
-	return keys
-}
-
-func (h *mapping[K, V]) patterns(f func(*Pattern, http.Handler, string) error) error {
-	panic("TDB")
-	// if h == nil {
-	// 	return nil
-	// }
-	// if h.m != nil {
-	// 	for _, n := range h.m {
-	// 		if err := n.patterns(f); err != nil {
-	// 			return err
-	// 		}
-	// 	}
-	// } else {
-	// 	for _, e := range h.s {
-	// 		if err := e.child.patterns(f); err != nil {
-	// 			return err
-	// 		}
-	// 	}
-	// }
-	// return nil
+	})
 }
