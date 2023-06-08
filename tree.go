@@ -28,7 +28,7 @@ type node struct {
 	//     "/"	trailing slash
 	//	   ""   single wildcard
 	//	   "*"  multi wildcard
-	children   *mapping
+	children   mapping[string, *node]
 	emptyChild *node // optimization: child with key ""
 }
 
@@ -97,15 +97,13 @@ func (n *node) addChild(key string) *node {
 		return c
 	}
 	c := &node{}
-	if n.children == nil {
-		n.children = &mapping{}
-	}
 	n.children.add(key, c)
 	return c
 }
 
 func (n *node) findChild(key string) *node {
-	return n.children.find(key)
+	r, _ := n.children.find(key)
+	return r
 }
 
 // TODO: version without matches for ServeMux.shouldRedirect.
@@ -183,15 +181,15 @@ func (n *node) patterns(f func(*Pattern, http.Handler, string) error) error {
 // A mapping is a set of key-value pairs.
 // An zero mapping is empty and ready to use.
 //
-// Mappings try to pick a representation that makes lookup most efficient.
-type mapping struct {
-	s []entry          // for few pairs
-	m map[string]*node // for many pairs
+// Mappings try to pick a representation that makes find most efficient.
+type mapping[K comparable, V any] struct {
+	s []entry[K, V] // for few pairs
+	m map[K]V       // for many pairs
 }
 
-type entry struct {
-	key   string
-	child *node
+type entry[K comparable, V any] struct {
+	key   K
+	child V
 }
 
 // maxSlice is the maximum number of pairs for which a slice is used.
@@ -199,12 +197,12 @@ type entry struct {
 var maxSlice int = 8
 
 // add adds a key-value pair to the mapping.
-func (h *mapping) add(k string, v *node) {
+func (h *mapping[K, V]) add(k K, v V) {
 	if h.m == nil && len(h.s) < maxSlice {
-		h.s = append(h.s, entry{k, v})
+		h.s = append(h.s, entry[K, V]{k, v})
 	} else {
 		if h.m == nil {
-			h.m = map[string]*node{}
+			h.m = map[K]V{}
 			for _, e := range h.s {
 				h.m[e.key] = e.child
 			}
@@ -214,54 +212,57 @@ func (h *mapping) add(k string, v *node) {
 	}
 }
 
-// find returns the value corresponding to the given key,
-// or nil if it is not present.
-func (h *mapping) find(k string) *node {
+// find returns the value corresponding to the given key.
+// The second return value is false if there is no value
+// with that key.
+func (h *mapping[K, V]) find(k K) (v V, found bool) {
 	if h == nil {
-		return nil
+		return v, false
 	}
 	if h.m != nil {
-		return h.m[k]
+		v, found = h.m[k]
+		return v, found
 	}
 	for _, e := range h.s {
 		if e.key == k {
-			return e.child
+			return e.child, true
 		}
 	}
-	return nil
+	return v, false
 }
 
 // keys returns all the keys in the mapping.
-func (h *mapping) keys() []string {
+func (h *mapping[K, V]) keys() []K {
 	if h == nil {
 		return nil
 	}
 	if h.m != nil {
 		return maps.Keys(h.m)
 	}
-	var keys []string
+	var keys []K
 	for _, e := range h.s {
 		keys = append(keys, e.key)
 	}
 	return keys
 }
 
-func (h *mapping) patterns(f func(*Pattern, http.Handler, string) error) error {
-	if h == nil {
-		return nil
-	}
-	if h.m != nil {
-		for _, n := range h.m {
-			if err := n.patterns(f); err != nil {
-				return err
-			}
-		}
-	} else {
-		for _, e := range h.s {
-			if err := e.child.patterns(f); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+func (h *mapping[K, V]) patterns(f func(*Pattern, http.Handler, string) error) error {
+	panic("TDB")
+	// if h == nil {
+	// 	return nil
+	// }
+	// if h.m != nil {
+	// 	for _, n := range h.m {
+	// 		if err := n.patterns(f); err != nil {
+	// 			return err
+	// 		}
+	// 	}
+	// } else {
+	// 	for _, e := range h.s {
+	// 		if err := e.child.patterns(f); err != nil {
+	// 			return err
+	// 		}
+	// 	}
+	// }
+	// return nil
 }
