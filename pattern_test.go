@@ -480,7 +480,7 @@ func TestRegisterConflict(t *testing.T) {
 		`" \(registered at .*/pattern_test.go:\d+\) conflicts with pattern "` +
 		q1 +
 		`" \(registered at .*/pattern_test.go:\d+\):
-` + q2 + ` matches the same paths as ` + q1
+` + q2 + ` matches the same requests as ` + q1
 	m, err := regexp.MatchString(wantre, got)
 	if err != nil {
 		t.Fatal(err)
