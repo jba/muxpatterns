@@ -313,7 +313,7 @@ func TestOverlapPath(t *testing.T) {
 		if pat1.comparePaths(pat2) != overlaps {
 			t.Fatalf("%s does not overlap %s", test.p1, test.p2)
 		}
-		got := overlapPath(pat1, pat2)
+		got := commonPath(pat1, pat2)
 		if got != test.want {
 			t.Errorf("%s vs. %s: got %q, want %q", test.p1, test.p2, got, test.want)
 		}
@@ -487,6 +487,28 @@ func TestRegisterConflict(t *testing.T) {
 	}
 	if !m {
 		t.Errorf("got\n%s\nwant\n%s", got, wantre)
+	}
+}
+
+func TestDescribeRelationship(t *testing.T) {
+	for _, test := range []struct {
+		p1, p2 string
+		want   string
+	}{
+		{"/a/{x}", "/a/{y}", "matches the same"},
+		{"/a/{x}", "/{y}/b", "neither is more specific"},
+		{"GET /", "/", "is more specific than"},
+		{"/foo", "/", "is more specific than"},
+		{"/", "GET /", "is more specific than"},
+		{"/", "/foo", "is more specific than"},
+		{"a.com/b", "/b", "does not have a host"},
+		{"a.com/b", "b.com/b", "different hosts"},
+	} {
+		got := DescribeRelationship(test.p1, test.p2)
+		if !strings.Contains(got, test.want) {
+			t.Errorf("%s vs. %s:\ngot:\n%s\nwhich does not contain %q",
+				test.p1, test.p2, got, test.want)
+		}
 	}
 }
 

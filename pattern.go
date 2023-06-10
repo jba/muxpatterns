@@ -245,32 +245,40 @@ const (
 )
 
 func (p1 *Pattern) comparePathsAndMethods(p2 *Pattern) relationship {
+	mr := p1.compareMethods(p2)
+	// Optimization: avoid a call to comparePaths.
+	if mr == disjoint {
+		return disjoint
+	}
+	pr := p1.comparePaths(p2)
+	return combineRelationships(mr, pr)
+}
+
+func combineRelationships(methodRel, pathRel relationship) relationship {
 	switch {
-	case p1.method == p2.method:
-		// Methods are equivalent; path determines relationship
-		return p1.comparePaths(p2)
-	case p1.method == "":
-		// p1's method is more general than p2's.
-		switch rel := p1.comparePaths(p2); rel {
+	case methodRel == equivalent:
+		return pathRel
+	case methodRel == moreGeneral:
+		switch pathRel {
 		case equivalent:
 			return moreGeneral
 		case moreSpecific:
 			return overlaps
 		default:
-			return rel
+			return pathRel
 		}
-	case p2.method == "":
+	case methodRel == moreSpecific:
 		// The dual of the above.
-		switch rel := p1.comparePaths(p2); rel {
+		switch pathRel {
 		case equivalent:
 			return moreSpecific
 		case moreGeneral:
 			return overlaps
 		default:
-			return rel
+			return pathRel
 		}
 	default:
-		// Different non-empty methods
+		// Different non-empty methods.
 		return disjoint
 	}
 }
@@ -403,34 +411,59 @@ func DescribeRelationship(pat1, pat2 string) string {
 }
 
 func describeRel(p1, p2 *Pattern) string {
-	// TODO: method and host
-	rel := p1.comparePaths(p2)
+	if p1.host != p2.host {
+		switch {
+		case p1.host == "":
+			return fmt.Sprintf("%s does not have a host, while %s does, so %[2]s takes precedence", p1, p2)
+		case p2.host == "":
+			return fmt.Sprintf("%s does not have a host, while %s does, so %[2]s takes precedence", p2, p1)
+		default:
+			return fmt.Sprintf("%s and %s have different hosts, so they have no requests in common", p1, p2)
+		}
+	}
+	methodRel := p1.compareMethods(p2)
+	pathRel := p1.comparePaths(p2)
+	rel := combineRelationships(methodRel, pathRel)
 	switch rel {
 	case disjoint:
-		return fmt.Sprintf("%s has no paths in common with %s.", p1, p2)
+		return fmt.Sprintf("%s has no requests in common with %s.", p1, p2)
 	case equivalent:
-		return fmt.Sprintf("%s matches the same paths as %s.", p1, p2)
+		return fmt.Sprintf("%s matches the same requests as %s.", p1, p2)
 	case moreSpecific:
-		over := matchingPath(p1)
-		diff := differencePath(p2, p1)
-		return fmt.Sprintf(`%s is more specific than %s.
-Both match %q.
-Only %[2]s matches %[4]q.`,
-			p1, p2, over, diff)
+		return moreSpecificMessage(p1, p2, methodRel)
 	case moreGeneral:
-		over := matchingPath(p2)
-		diff := differencePath(p1, p2)
-		return fmt.Sprintf(`%s is more general than %s.
-Both match %q.
-Only %[1]s matches %[4]q.`,
-			p1, p2, over, diff)
-	default: // overlap
+		if methodRel == moreGeneral {
+			methodRel = moreSpecific
+		}
+		return moreSpecificMessage(p2, p1, methodRel)
+	case overlaps:
 		return fmt.Sprintf(`%[1]s and %[2]s both match some paths, like %[3]q.
 But neither is more specific than the other.
 %[1]s matches %[4]q, but %[2]s doesn't.
 %[2]s matches %[5]q, but %[1]s doesn't.`,
-			p1, p2, overlapPath(p1, p2), differencePath(p1, p2), differencePath(p2, p1))
+			p1, p2, commonPath(p1, p2), differencePath(p1, p2), differencePath(p2, p1))
+	default: // overlap
+		panic(fmt.Sprintf("bad relationship %q", rel))
 	}
+}
+
+func moreSpecificMessage(spec, gen *Pattern, methodRel relationship) string {
+	// Either the method or path is more specific, or both.
+	over := matchingPath(spec)
+	if methodRel == moreSpecific {
+		// spec.method is not empty, gen.method is.
+		return fmt.Sprintf(`%q is more specific than %q.
+Both match "%s %s".
+Only %[2]s matches "%[5]s %s".`,
+			spec, gen,
+			spec.method, over,
+			otherMethod(spec.method), over)
+	}
+	diff := differencePath(gen, spec)
+	return fmt.Sprintf(`%s is more specific than %s.
+Both match path %s.
+Only %[2]s matches path %[4]q.`,
+		spec, gen, over, diff)
 }
 
 func matchingPath(p *Pattern) string {
@@ -453,9 +486,9 @@ func writeSegment(b *strings.Builder, s segment) {
 	}
 }
 
-// overlapPath returns a path that both p1 and p2 match.
+// commonPath returns a path that both p1 and p2 match.
 // It assumes there is such a path.
-func overlapPath(p1, p2 *Pattern) string {
+func commonPath(p1, p2 *Pattern) string {
 	var b strings.Builder
 	var segs1, segs2 []segment
 	for segs1, segs2 = p1.segments, p2.segments; len(segs1) > 0 && len(segs2) > 0; segs1, segs2 = segs1[1:], segs2[1:] {
@@ -473,6 +506,14 @@ func overlapPath(p1, p2 *Pattern) string {
 		writeMatchingPath(&b, segs2)
 	}
 	return b.String()
+}
+
+func otherMethod(method string) string {
+	i := slices.Index(methods, method)
+	if i < 0 {
+		return "BADMETHOD"
+	}
+	return methods[(i+1)%len(methods)]
 }
 
 // differencePath returns a path that p1 matches and p2 doesn't.
