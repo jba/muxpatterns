@@ -89,14 +89,16 @@ func (mux *ServeMux) Handler(r *http.Request) (h http.Handler, pattern string) {
 	return h, p
 }
 
-func (mux *ServeMux) findHandler(method, host, path string) (h http.Handler, p string, matches []string) {
+func (mux *ServeMux) findHandler(method, host, path string) (h http.Handler, pattern string, multi bool, matches []string) {
 	mux.mu.RLock()
 	defer mux.mu.RUnlock()
 	n, matches := mux.tree.match(method, host, path)
 	if n == nil {
-		return http.NotFoundHandler(), "", nil
+		return http.NotFoundHandler(), "", false, nil
 	}
-	return n.handler, n.pattern.String(), matches
+	segs := n.pattern.segments
+	multi = segs[len(segs)-1].multi
+	return n.handler, n.pattern.String(), multi, matches
 }
 
 func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -123,7 +125,8 @@ func (mux *ServeMux) handler(r *http.Request) (h http.Handler, pattern string, m
 			return http.RedirectHandler(u.String(), http.StatusMovedPermanently), u.Path, nil
 		}
 
-		return mux.findHandler(r.Method, r.Host, r.URL.Path)
+		h, p, _, m := mux.findHandler(r.Method, r.Host, r.URL.Path)
+		return h, p, m
 	}
 
 	// All other requests have any port stripped and path cleaned
@@ -138,12 +141,12 @@ func (mux *ServeMux) handler(r *http.Request) (h http.Handler, pattern string, m
 	}
 
 	if path != r.URL.Path {
-		_, pattern, _ = mux.findHandler(r.Method, host, path)
+		_, pattern, _, _ = mux.findHandler(r.Method, host, path)
 		u := &url.URL{Path: path, RawQuery: r.URL.RawQuery}
 		return http.RedirectHandler(u.String(), http.StatusMovedPermanently), pattern, nil
 	}
-
-	return mux.findHandler(r.Method, host, r.URL.Path)
+	h, p, _, m := mux.findHandler(r.Method, host, r.URL.Path)
+	return h, p, m
 }
 
 // cleanPath returns the canonical path for p, eliminating . and .. elements.
