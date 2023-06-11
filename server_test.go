@@ -27,11 +27,12 @@ func TestServeMuxHandler(t *testing.T) {
 	hmux.Handle("/foo/", &handler{2})
 	hmux.Handle("/foo", &handler{3})
 	hmux.Handle("/bar/", &handler{4})
-	hmux.Handle("//foo", &handler{5})
+	// TODO: add this to mux, too, once we relax pattern parsing.
+	//hmux.Handle("//foo", &handler{5})
 
 	for _, test := range []struct {
 		method      string
-		url         string
+		path        string
 		wantHandler string
 	}{
 		{"GET", "/", "&muxpatterns.handler{i:1}"},
@@ -42,8 +43,8 @@ func TestServeMuxHandler(t *testing.T) {
 		{"GET", "/bar/x", "&muxpatterns.handler{i:4}"},
 		{"GET", "/bar", `&http.redirectHandler{url:"/bar/", code:301}`},
 		{"CONNECT", "/", "&muxpatterns.handler{i:1}"},
-		{"CONNECT", "//", fmt.Sprintf("%#v", http.NotFoundHandler())},
-		{"CONNECT", "//foo", fmt.Sprintf("%#v", http.NotFoundHandler())},
+		{"CONNECT", "//", "&muxpatterns.handler{i:1}"},
+		{"CONNECT", "//foo", "&muxpatterns.handler{i:1}"},
 		{"CONNECT", "/foo/../bar/./..//baz", "&muxpatterns.handler{i:2}"},
 		{"CONNECT", "/foo", "&muxpatterns.handler{i:3}"},
 		{"CONNECT", "/foo/x", "&muxpatterns.handler{i:2}"},
@@ -53,21 +54,17 @@ func TestServeMuxHandler(t *testing.T) {
 		var r http.Request
 		r.Method = test.method
 		r.Host = "example.com"
-		u, err := url.Parse(test.url)
-		if err != nil {
-			t.Fatal(err)
-		}
-		r.URL = u
+		r.URL = &url.URL{Path: test.path}
 		gotH, _, _ := mux.handler(&r)
 		got := fmt.Sprintf("%#v", gotH)
 		if got != test.wantHandler {
-			t.Errorf("%s %q: got %q, want %q", test.method, test.url, got, test.wantHandler)
+			t.Errorf("%s %q: got %q, want %q", test.method, test.path, got, test.wantHandler)
 		}
 
 		hh, _ := hmux.Handler(&r)
 		hhs := fmt.Sprintf("%#v", hh)
 		if hhs != test.wantHandler {
-			t.Errorf("%s %q: http: got %s, want %s\n", test.method, test.url, hhs, test.wantHandler)
+			t.Errorf("%s %q: http: got %s, want %s\n", test.method, test.path, hhs, test.wantHandler)
 		}
 
 	}
@@ -85,4 +82,34 @@ func TestServeMuxBadURLs(t *testing.T) {
 	}
 	got, gotpat := hmux.Handler(r)
 	fmt.Printf("%#v, %q\n", got, gotpat)
+}
+
+func TestExactMatch(t *testing.T) {
+	for _, test := range []struct {
+		pattern string
+		path    string
+		want    bool
+	}{
+		{"", "/a", false},
+		{"/", "/a", false},
+		{"/a", "/a", true},
+		{"/a/{x...}", "/a/b", false},
+		{"/a/{x}", "/a/b", true},
+		{"/a/b/", "/a/b/", true},
+		{"/a/b/{$}", "/a/b/", true},
+		{"/a/", "/a/b/", false},
+	} {
+		var n *node
+		if test.pattern != "" {
+			pat, err := Parse(test.pattern)
+			if err != nil {
+				t.Fatal(err)
+			}
+			n = &node{pattern: pat}
+		}
+		got := exactMatch(n, test.path)
+		if got != test.want {
+			t.Errorf("%q, %s: got %t, want %t", test.pattern, test.path, got, test.want)
+		}
+	}
 }

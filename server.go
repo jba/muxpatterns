@@ -89,17 +89,24 @@ func (mux *ServeMux) Handler(r *http.Request) (h http.Handler, pattern string) {
 	return h, p
 }
 
-func (mux *ServeMux) findHandler(method, host, path string) (h http.Handler, pattern string, multi bool, matches []string) {
-	mux.mu.RLock()
-	defer mux.mu.RUnlock()
-	n, matches := mux.tree.match(method, host, path)
-	if n == nil {
-		return http.NotFoundHandler(), "", false, nil
-	}
-	segs := n.pattern.segments
-	multi = segs[len(segs)-1].multi
-	return n.handler, n.pattern.String(), multi, matches
+func (p *Pattern) isMulti() bool {
+	return p.segments[len(p.segments)-1].multi
 }
+
+func handlerResult(n *node, matches []string) (h http.Handler, pattern string, ms []string) {
+	if n == nil {
+		return http.NotFoundHandler(), "", nil
+	}
+	return n.handler, n.pattern.String(), matches
+}
+
+// func (mux *ServeMux) findHandler(method, host, path string) (h http.Handler, pattern string, matches []string) {
+// 	n, matches := mux.match(method, host, path)
+// 	if n == nil {
+// 		return http.NotFoundHandler(), "", nil
+// 	}
+// 	return n.handler, n.pattern.String(), matches
+// }
 
 func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// This if statement copied from net/http/server.go.
@@ -121,12 +128,14 @@ func (mux *ServeMux) handler(r *http.Request) (h http.Handler, pattern string, m
 		// If r.URL.Path is /tree and its handler is not registered,
 		// the /tree -> /tree/ redirect applies to CONNECT requests
 		// but the path canonicalization does not.
-		if u, ok := mux.redirectToPathSlash(r.Method, r.URL.Host, r.URL.Path, r.URL); ok {
+		n, matches, u, redirect := mux.matchOrRedirect(r.Method, r.URL.Host, r.URL.Path, r.URL)
+		if redirect {
 			return http.RedirectHandler(u.String(), http.StatusMovedPermanently), u.Path, nil
 		}
-
-		h, p, _, m := mux.findHandler(r.Method, r.Host, r.URL.Path)
-		return h, p, m
+		// Redo the match, this time with r.Host instead of r.URL.Host.
+		// Pass a nil URL to skip the trailing-slash redirect logic.
+		n, matches, _, _ = mux.matchOrRedirect(r.Method, r.Host, r.URL.Path, nil)
+		return handlerResult(n, matches)
 	}
 
 	// All other requests have any port stripped and path cleaned
@@ -136,17 +145,20 @@ func (mux *ServeMux) handler(r *http.Request) (h http.Handler, pattern string, m
 
 	// If the given path is /tree and its handler is not registered,
 	// redirect for /tree/.
-	if u, ok := mux.redirectToPathSlash(r.Method, host, path, r.URL); ok {
+	n, matches, u, redirect := mux.matchOrRedirect(r.Method, host, path, r.URL)
+	if redirect {
 		return http.RedirectHandler(u.String(), http.StatusMovedPermanently), u.Path, nil
 	}
-
 	if path != r.URL.Path {
-		_, pattern, _, _ = mux.findHandler(r.Method, host, path)
+		// Redirect to cleaned path.
+		pattern := ""
+		if n != nil {
+			pattern = n.pattern.String()
+		}
 		u := &url.URL{Path: path, RawQuery: r.URL.RawQuery}
 		return http.RedirectHandler(u.String(), http.StatusMovedPermanently), pattern, nil
 	}
-	h, p, _, m := mux.findHandler(r.Method, host, r.URL.Path)
-	return h, p, m
+	return handlerResult(n, matches)
 }
 
 // cleanPath returns the canonical path for p, eliminating . and .. elements.
@@ -184,43 +196,37 @@ func stripHostPort(h string) string {
 	return host
 }
 
-// redirectToPathSlash determines if the given path needs appending "/" to it.
-// This occurs when a handler for path + "/" was already registered, but
-// not for path itself. If the path needs appending to, it creates a new
-// URL, setting the path to u.Path + "/" and returning true to indicate so.
-func (mux *ServeMux) redirectToPathSlash(method, host, path string, u *url.URL) (*url.URL, bool) {
-	// BEGIN CHANGE
-	if len(path) == 0 || path[len(path)-1] == '/' {
-		return u, false
-	}
-	// END CHANGE
+func (mux *ServeMux) matchOrRedirect(method, host, path string, u *url.URL) (*node, []string, *url.URL, bool) {
+	// Hold the read lock for the entire method so that the two matches are done
+	// on the same set of registered patterns.
 	mux.mu.RLock()
-	shouldRedirect := mux.shouldRedirectRLocked(method, host, path)
-	mux.mu.RUnlock()
-	if !shouldRedirect {
-		return u, false
-	}
-	path = path + "/"
-	u = &url.URL{Path: path, RawQuery: u.RawQuery}
-	return u, true
-}
-
-func (mux *ServeMux) shouldRedirectRLocked(method, host, path string) bool {
-	// BEGIN CHANGE
-	// TODO: This is a second lookup for every matching path that doesn't end in '/'. Avoid.
-	// If path matches a pattern exactly, not via a multi, then don't redirect.
-	if n, _ := mux.tree.match(method, host, path); n != nil {
-		segs := n.pattern.segments
-		if !segs[len(segs)-1].multi {
-			return false
+	defer mux.mu.RUnlock()
+	n, matches := mux.tree.match(method, host, path)
+	// If we have an exact match, then don't redirect.
+	if !exactMatch(n, path) && u != nil {
+		// If there is an exact match with a trailing slash, then redirect.
+		path += "/"
+		n2, _ := mux.tree.match(method, host, path)
+		if exactMatch(n2, path) {
+			return nil, nil, &url.URL{Path: path, RawQuery: u.RawQuery}, true
 		}
 	}
-	// TODO: this will succeed if "/path/{$}" is registered, as well as "/path/". Do we want that?
-	// If not, it's not so easy to fix: if both are registered, the first will be returned in this
-	// case, masking the second; and the redirect will find the first. I don't think we can
-	// do anything about this.
-	n, _ := mux.tree.match(method, host, path+"/")
-	nSegs := strings.Count(path, "/")
-	return n != nil && len(n.pattern.segments) > nSegs
-	// END CHANGE
+	return n, matches, nil, false
+}
+
+func exactMatch(n *node, path string) bool {
+	if n == nil {
+		return false
+	}
+	if len(path) > 0 && path[len(path)-1] != '/' {
+		// If the path doesn't end in a trailing slash, then
+		// an exact match is one that doesn't end in a multi.
+		return !n.pattern.isMulti()
+	}
+	// Only patterns ending in {$} or a multi wildcard can
+	// match a path with a trailing slash.
+	// For the match to be exact, the number of pattern
+	// segments should be the same as the number of slashes in the path.
+	// E.g. "/a/b/{$}" and "/a/b/{...}" exactly match "/a/b/", but "/a/" does not.
+	return len(n.pattern.segments) == strings.Count(path, "/")
 }
