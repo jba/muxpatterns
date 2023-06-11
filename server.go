@@ -96,21 +96,6 @@ func (p *Pattern) isMulti() bool {
 	return p.segments[len(p.segments)-1].multi
 }
 
-func handlerResult(n *node, matches []string) (h http.Handler, pattern *Pattern, spat string, ms []string) {
-	if n == nil {
-		return http.NotFoundHandler(), nil, "", nil
-	}
-	return n.handler, n.pattern, n.pattern.String(), matches
-}
-
-// func (mux *ServeMux) findHandler(method, host, path string) (h http.Handler, pattern string, matches []string) {
-// 	n, matches := mux.match(method, host, path)
-// 	if n == nil {
-// 		return http.NotFoundHandler(), "", nil
-// 	}
-// 	return n.handler, n.pattern.String(), matches
-// }
-
 func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// This if statement copied from net/http/server.go.
 	if r.RequestURI == "*" {
@@ -130,42 +115,49 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (mux *ServeMux) handler(r *http.Request) (h http.Handler, pattern *Pattern, spat string, matches []string) {
+	var (
+		n        *node
+		u        *url.URL
+		redirect bool
+	)
 	// CONNECT requests are not canonicalized.
 	if r.Method == "CONNECT" {
 		// If r.URL.Path is /tree and its handler is not registered,
 		// the /tree -> /tree/ redirect applies to CONNECT requests
 		// but the path canonicalization does not.
-		n, matches, u, redirect := mux.matchOrRedirect(r.Method, r.URL.Host, r.URL.Path, r.URL)
+		n, matches, u, redirect = mux.matchOrRedirect(r.Method, r.URL.Host, r.URL.Path, r.URL)
 		if redirect {
 			return http.RedirectHandler(u.String(), http.StatusMovedPermanently), nil, u.Path, nil
 		}
 		// Redo the match, this time with r.Host instead of r.URL.Host.
 		// Pass a nil URL to skip the trailing-slash redirect logic.
 		n, matches, _, _ = mux.matchOrRedirect(r.Method, r.Host, r.URL.Path, nil)
-		return handlerResult(n, matches)
-	}
+	} else {
+		// All other requests have any port stripped and path cleaned
+		// before passing to mux.handler.
+		host := stripHostPort(r.Host)
+		path := cleanPath(r.URL.Path)
 
-	// All other requests have any port stripped and path cleaned
-	// before passing to mux.handler.
-	host := stripHostPort(r.Host)
-	path := cleanPath(r.URL.Path)
-
-	// If the given path is /tree and its handler is not registered,
-	// redirect for /tree/.
-	n, matches, u, redirect := mux.matchOrRedirect(r.Method, host, path, r.URL)
-	if redirect {
-		return http.RedirectHandler(u.String(), http.StatusMovedPermanently), nil, u.Path, nil
-	}
-	if path != r.URL.Path {
-		// Redirect to cleaned path.
-		pattern := ""
-		if n != nil {
-			pattern = n.pattern.String()
+		// If the given path is /tree and its handler is not registered,
+		// redirect for /tree/.
+		n, matches, u, redirect = mux.matchOrRedirect(r.Method, host, path, r.URL)
+		if redirect {
+			return http.RedirectHandler(u.String(), http.StatusMovedPermanently), nil, u.Path, nil
 		}
-		u := &url.URL{Path: path, RawQuery: r.URL.RawQuery}
-		return http.RedirectHandler(u.String(), http.StatusMovedPermanently), nil, pattern, nil
+		if path != r.URL.Path {
+			// Redirect to cleaned path.
+			pattern := ""
+			if n != nil {
+				pattern = n.pattern.String()
+			}
+			u := &url.URL{Path: path, RawQuery: r.URL.RawQuery}
+			return http.RedirectHandler(u.String(), http.StatusMovedPermanently), nil, pattern, nil
+		}
 	}
-	return handlerResult(n, matches)
+	if n == nil {
+		return http.NotFoundHandler(), nil, "", nil
+	}
+	return n.handler, n.pattern, n.pattern.String(), matches
 }
 
 // cleanPath returns the canonical path for p, eliminating . and .. elements.
@@ -221,6 +213,7 @@ func (mux *ServeMux) matchOrRedirect(method, host, path string, u *url.URL) (*no
 	return n, matches, nil, false
 }
 
+// exactMatch reports whether the node's pattern exactly matches the path.
 func exactMatch(n *node, path string) bool {
 	if n == nil {
 		return false
@@ -238,6 +231,11 @@ func exactMatch(n *node, path string) bool {
 	return len(n.pattern.segments) == strings.Count(path, "/")
 }
 
+// PathValue returns the value for the named path wildcard in the
+// pattern that matched the request.
+//
+// This is a method on ServeMux only for demo purposes.
+// In the actual implementation, it will be a method on Request.
 func (mux *ServeMux) PathValue(r *http.Request, name string) string {
 	mux.mu.RLock()
 	defer mux.mu.RUnlock()

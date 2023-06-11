@@ -301,7 +301,8 @@ func (p1 *Pattern) compareMethods(p2 *Pattern) relationship {
 	return disjoint
 }
 
-// comparePaths determines the relationship between two patterns:
+// comparePaths determines the relationship between two patterns,
+// as far as paths are concerned.
 //
 //	equivalent: p1 and p2 match the same paths
 //	moreGeneral: p1 matches all the paths of p2 and more
@@ -387,7 +388,7 @@ func (p1 *Pattern) comparePaths(p2 *Pattern) relationship {
 }
 
 // DescribeRelationship returns a string that describes how pat1 and pat2
-// are related, in terms of the paths they match.
+// are related.
 func DescribeRelationship(pat1, pat2 string) string {
 	p1, err := Parse(pat1)
 	if err != nil {
@@ -482,10 +483,8 @@ func commonPath(p1, p2 *Pattern) string {
 	var b strings.Builder
 	var segs1, segs2 []segment
 	for segs1, segs2 = p1.segments, p2.segments; len(segs1) > 0 && len(segs2) > 0; segs1, segs2 = segs1[1:], segs2[1:] {
-		s1 := segs1[0]
-		s2 := segs2[0]
-		if s1.wild {
-			writeSegment(&b, s2)
+		if s1 := segs1[0]; s1.wild {
+			writeSegment(&b, segs2[0])
 		} else {
 			writeSegment(&b, s1)
 		}
