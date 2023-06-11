@@ -141,11 +141,7 @@ func TestComparePaths(t *testing.T) {
 		want   relationship
 	}{
 		// TODO: verify we hit all these case below in our systematic list.
-		{"/a/{$}", "/a", disjoint},
-		{"/", "/a", moreGeneral},
 		{"/{x...}", "/a", moreGeneral},
-		{"/", "/{x}", moreGeneral},
-		{"/", "/{$}", moreGeneral},
 		{"/a/b/{x...}", "/a/b/c/d/{y...}", moreGeneral},
 		{"/a/{x...}", "/a/b/{x...}", moreGeneral},
 		{"/a/{$}", "/a/b/{x...}", disjoint},
@@ -258,6 +254,7 @@ func TestComparePaths(t *testing.T) {
 		{"/{$}", "/", moreSpecific},
 		{"/{$}", "/{x...}", moreSpecific},
 
+		{"/b/{$}", "/b", disjoint},
 		{"/b/{$}", "/b/a", disjoint},
 		{"/b/{$}", "/b/a/b", disjoint},
 		{"/b/{$}", "/b/{$}", equivalent},
