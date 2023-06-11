@@ -55,7 +55,7 @@ func TestServeMuxHandler(t *testing.T) {
 		r.Method = test.method
 		r.Host = "example.com"
 		r.URL = &url.URL{Path: test.path}
-		gotH, _, _ := mux.handler(&r)
+		gotH, _, _, _ := mux.handler(&r)
 		got := fmt.Sprintf("%#v", gotH)
 		if got != test.wantHandler {
 			t.Errorf("%s %q: got %q, want %q", test.method, test.path, got, test.wantHandler)
@@ -112,4 +112,24 @@ func TestExactMatch(t *testing.T) {
 			t.Errorf("%q, %s: got %t, want %t", test.pattern, test.path, got, test.want)
 		}
 	}
+}
+
+func TestPathValue(t *testing.T) {
+	mux := NewServeMux()
+	mux.Handle("/{a}/is/{b}/{c...}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, test := range []struct {
+			name, want string
+		}{
+			{"a", "now"},
+			{"b", "the"},
+			{"c", "time/for/all"},
+			{"d", ""},
+		} {
+			got := mux.PathValue(r, test.name)
+			if got != test.want {
+				t.Errorf("%q: got %q, want %q", test.name, got, test.want)
+			}
+		}
+	}))
+	mux.ServeHTTP(nil, &http.Request{Method: "GET", URL: &url.URL{Path: "/now/is/the/time/for/all"}})
 }

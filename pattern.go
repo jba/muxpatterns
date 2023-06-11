@@ -386,21 +386,6 @@ func (p1 *Pattern) comparePaths(p2 *Pattern) relationship {
 	return disjoint
 }
 
-// bind returns a map from wildcard names to matched, decoded values.
-// matches is a list of matched substrings in the order that non-empty wildcards
-// appear in the Pattern.
-func (p *Pattern) bind(matches []string) map[string]string {
-	bindings := make(map[string]string, len(matches))
-	i := 0
-	for _, seg := range p.segments {
-		if seg.wild && seg.s != "" {
-			bindings[seg.s] = matches[i]
-			i++
-		}
-	}
-	return bindings
-}
-
 // DescribeRelationship returns a string that describes how pat1 and pat2
 // are related, in terms of the paths they match.
 func DescribeRelationship(pat1, pat2 string) string {

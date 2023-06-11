@@ -25,10 +25,13 @@ import (
 type ServeMux struct {
 	mu   sync.RWMutex
 	tree *node
+	// Temporary hack to expose pattern matches.
+	// This grows without bound!
+	matches map[*http.Request]match
 }
 
 func NewServeMux() *ServeMux {
-	return &ServeMux{}
+	return &ServeMux{matches: map[*http.Request]match{}}
 }
 
 func (mux *ServeMux) Handle(pattern string, handler http.Handler) {
@@ -85,19 +88,19 @@ func callerLocation() string {
 }
 
 func (mux *ServeMux) Handler(r *http.Request) (h http.Handler, pattern string) {
-	h, p, _ := mux.handler(r)
-	return h, p
+	h, _, sp, _ := mux.handler(r)
+	return h, sp
 }
 
 func (p *Pattern) isMulti() bool {
 	return p.segments[len(p.segments)-1].multi
 }
 
-func handlerResult(n *node, matches []string) (h http.Handler, pattern string, ms []string) {
+func handlerResult(n *node, matches []string) (h http.Handler, pattern *Pattern, spat string, ms []string) {
 	if n == nil {
-		return http.NotFoundHandler(), "", nil
+		return http.NotFoundHandler(), nil, "", nil
 	}
-	return n.handler, n.pattern.String(), matches
+	return n.handler, n.pattern, n.pattern.String(), matches
 }
 
 // func (mux *ServeMux) findHandler(method, host, path string) (h http.Handler, pattern string, matches []string) {
@@ -117,12 +120,16 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	h, _, matches := mux.handler(r)
-	_ = matches // TODO
+	h, pat, _, matches := mux.handler(r)
+	if pat != nil {
+		mux.mu.Lock()
+		mux.matches[r] = match{pat, matches}
+		mux.mu.Unlock()
+	}
 	h.ServeHTTP(w, r)
 }
 
-func (mux *ServeMux) handler(r *http.Request) (h http.Handler, pattern string, matches []string) {
+func (mux *ServeMux) handler(r *http.Request) (h http.Handler, pattern *Pattern, spat string, matches []string) {
 	// CONNECT requests are not canonicalized.
 	if r.Method == "CONNECT" {
 		// If r.URL.Path is /tree and its handler is not registered,
@@ -130,7 +137,7 @@ func (mux *ServeMux) handler(r *http.Request) (h http.Handler, pattern string, m
 		// but the path canonicalization does not.
 		n, matches, u, redirect := mux.matchOrRedirect(r.Method, r.URL.Host, r.URL.Path, r.URL)
 		if redirect {
-			return http.RedirectHandler(u.String(), http.StatusMovedPermanently), u.Path, nil
+			return http.RedirectHandler(u.String(), http.StatusMovedPermanently), nil, u.Path, nil
 		}
 		// Redo the match, this time with r.Host instead of r.URL.Host.
 		// Pass a nil URL to skip the trailing-slash redirect logic.
@@ -147,7 +154,7 @@ func (mux *ServeMux) handler(r *http.Request) (h http.Handler, pattern string, m
 	// redirect for /tree/.
 	n, matches, u, redirect := mux.matchOrRedirect(r.Method, host, path, r.URL)
 	if redirect {
-		return http.RedirectHandler(u.String(), http.StatusMovedPermanently), u.Path, nil
+		return http.RedirectHandler(u.String(), http.StatusMovedPermanently), nil, u.Path, nil
 	}
 	if path != r.URL.Path {
 		// Redirect to cleaned path.
@@ -156,7 +163,7 @@ func (mux *ServeMux) handler(r *http.Request) (h http.Handler, pattern string, m
 			pattern = n.pattern.String()
 		}
 		u := &url.URL{Path: path, RawQuery: r.URL.RawQuery}
-		return http.RedirectHandler(u.String(), http.StatusMovedPermanently), pattern, nil
+		return http.RedirectHandler(u.String(), http.StatusMovedPermanently), nil, pattern, nil
 	}
 	return handlerResult(n, matches)
 }
@@ -229,4 +236,31 @@ func exactMatch(n *node, path string) bool {
 	// segments should be the same as the number of slashes in the path.
 	// E.g. "/a/b/{$}" and "/a/b/{...}" exactly match "/a/b/", but "/a/" does not.
 	return len(n.pattern.segments) == strings.Count(path, "/")
+}
+
+func (mux *ServeMux) PathValue(r *http.Request, name string) string {
+	mux.mu.RLock()
+	defer mux.mu.RUnlock()
+	if m, ok := mux.matches[r]; ok {
+		return m.lookup(name)
+	}
+	return ""
+}
+
+type match struct {
+	pat    *Pattern
+	values []string
+}
+
+func (m match) lookup(name string) string {
+	i := 0
+	for _, seg := range m.pat.segments {
+		if seg.wild && seg.s != "" {
+			if name == seg.s {
+				return m.values[i]
+			}
+			i++
+		}
+	}
+	return ""
 }
