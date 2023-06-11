@@ -27,6 +27,7 @@ func TestServeMuxHandler(t *testing.T) {
 	hmux.Handle("/foo/", &handler{2})
 	hmux.Handle("/foo", &handler{3})
 	hmux.Handle("/bar/", &handler{4})
+	hmux.Handle("//foo", &handler{5})
 
 	for _, test := range []struct {
 		method      string
@@ -42,6 +43,7 @@ func TestServeMuxHandler(t *testing.T) {
 		{"GET", "/bar", `&http.redirectHandler{url:"/bar/", code:301}`},
 		{"CONNECT", "/", "&muxpatterns.handler{i:1}"},
 		{"CONNECT", "//", fmt.Sprintf("%#v", http.NotFoundHandler())},
+		{"CONNECT", "//foo", fmt.Sprintf("%#v", http.NotFoundHandler())},
 		{"CONNECT", "/foo/../bar/./..//baz", "&muxpatterns.handler{i:2}"},
 		{"CONNECT", "/foo", "&muxpatterns.handler{i:3}"},
 		{"CONNECT", "/foo/x", "&muxpatterns.handler{i:2}"},
@@ -69,4 +71,18 @@ func TestServeMuxHandler(t *testing.T) {
 		}
 
 	}
+}
+
+func TestServeMuxBadURLs(t *testing.T) {
+	hmux := http.NewServeMux()
+	hmux.Handle("/", &handler{1})
+	hmux.Handle("/foo", &handler{2})
+	hmux.Handle("/foo/../bar", &handler{3})
+
+	r, err := http.NewRequest(http.MethodConnect, "/foo/../bar", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, gotpat := hmux.Handler(r)
+	fmt.Printf("%#v, %q\n", got, gotpat)
 }
