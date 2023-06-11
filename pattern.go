@@ -127,6 +127,14 @@ func Parse(s string) (*Pattern, error) {
 	if strings.IndexByte(p.host, '{') >= 0 {
 		return nil, errors.New("host contains '{' (missing initial '/'?")
 	}
+	// At this point, rest is the path.
+
+	// An unclean path with a method that is not CONNECT can never match,
+	// because paths are cleaned before matching.
+	if method != "" && method != "CONNECT" && rest != cleanPath(rest) {
+		return nil, errors.New("non-CONNECT pattern with unclean path can never match")
+	}
+
 	seenNames := map[string]bool{}
 	for len(rest) > 0 {
 		// Invariant: rest[0] == '/'.
@@ -137,9 +145,6 @@ func Parse(s string) (*Pattern, error) {
 			break
 		}
 		i := strings.IndexByte(rest, '/')
-		if i == 0 {
-			return nil, errors.New("empty path segment")
-		}
 		if i < 0 {
 			i = len(rest)
 		}

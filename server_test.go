@@ -21,14 +21,14 @@ func TestServeMuxHandler(t *testing.T) {
 	mux.Handle("/foo/", &handler{2})
 	mux.Handle("/foo", &handler{3})
 	mux.Handle("/bar/", &handler{4})
+	mux.Handle("//foo", &handler{5})
 
 	hmux := http.NewServeMux()
 	hmux.Handle("/", &handler{1})
 	hmux.Handle("/foo/", &handler{2})
 	hmux.Handle("/foo", &handler{3})
 	hmux.Handle("/bar/", &handler{4})
-	// TODO: add this to mux, too, once we relax pattern parsing.
-	//hmux.Handle("//foo", &handler{5})
+	hmux.Handle("//foo", &handler{5})
 
 	for _, test := range []struct {
 		method      string
@@ -44,7 +44,7 @@ func TestServeMuxHandler(t *testing.T) {
 		{"GET", "/bar", `&http.redirectHandler{url:"/bar/", code:301}`},
 		{"CONNECT", "/", "&muxpatterns.handler{i:1}"},
 		{"CONNECT", "//", "&muxpatterns.handler{i:1}"},
-		{"CONNECT", "//foo", "&muxpatterns.handler{i:1}"},
+		{"CONNECT", "//foo", "&muxpatterns.handler{i:5}"},
 		{"CONNECT", "/foo/../bar/./..//baz", "&muxpatterns.handler{i:2}"},
 		{"CONNECT", "/foo", "&muxpatterns.handler{i:3}"},
 		{"CONNECT", "/foo/x", "&muxpatterns.handler{i:2}"},

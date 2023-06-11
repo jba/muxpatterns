@@ -81,6 +81,18 @@ func TestParse(t *testing.T) {
 			"/{a}/foo/{rest...}",
 			Pattern{segments: []segment{wild("a"), lit("foo"), multi("rest")}},
 		},
+		{
+			"//",
+			Pattern{segments: []segment{lit(""), multi("")}},
+		},
+		{
+			"/foo///./../bar",
+			Pattern{segments: []segment{lit("foo"), lit(""), lit(""), lit("."), lit(".."), lit("bar")}},
+		},
+		{
+			"a.com/foo//",
+			Pattern{host: "a.com", segments: []segment{lit("foo"), lit(""), multi("")}},
+		},
 	} {
 		got := mustParse(t, test.in)
 		if !got.equal(&test.want) {
@@ -97,8 +109,6 @@ func TestParseError(t *testing.T) {
 		{"", "empty pattern"},
 		{"MOOSE /", "bad method"},
 		{" ", "missing /"},
-		{"//", "empty path segment"},
-		{"GET a.com/foo//", "empty path segment"},
 		{"/{w}x", "bad wildcard segment"},
 		{"/x{w}", "bad wildcard segment"},
 		{"/{wx", "bad wildcard segment"},
@@ -112,6 +122,7 @@ func TestParseError(t *testing.T) {
 		{"/{a...}/x", "not at end"},
 		{"{a}/b", "missing initial '/'"},
 		{"/a/{x}/b/{x...}", "duplicate wildcard name"},
+		{"GET //", "unclean path"},
 	} {
 		_, err := Parse(test.in)
 		if err == nil || !strings.Contains(err.Error(), test.contains) {
