@@ -165,14 +165,15 @@ func (n *node) patterns(f func(*Pattern, http.Handler, string) error) error {
 		return nil
 	}
 	if n.pattern != nil {
-		return f(n.pattern, n.handler, n.location)
+		if err := f(n.pattern, n.handler, n.location); err != nil {
+			return err
+		}
 	}
 	if n.emptyChild != nil {
 		if err := n.emptyChild.patterns(f); err != nil {
 			return err
 		}
 	}
-
 	return n.children.pairs(func(_ string, n *node) error {
 		if err := n.patterns(f); err != nil {
 			return err

@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // ServeMux is an HTTP request multiplexer.
@@ -27,7 +28,8 @@ type ServeMux struct {
 	tree *node
 	// Temporary hack to expose pattern matches.
 	// This grows without bound!
-	matches map[*http.Request]match
+	matches       map[*http.Request]match
+	conflictCalls atomic.Int32
 }
 
 func NewServeMux() *ServeMux {
@@ -62,7 +64,10 @@ func (mux *ServeMux) register(pattern string, handler http.Handler) error {
 		return err
 	}
 	// Check for conflict.
+	npats := 0
 	if err := mux.tree.patterns(func(pat2 *Pattern, _ http.Handler, loc2 string) error {
+		npats++
+		mux.conflictCalls.Add(1)
 		if pat.ConflictsWith(pat2) {
 			d := describeRel(pat, pat2)
 			return fmt.Errorf("pattern %q (registered at %s) conflicts with pattern %q (registered at %s):\n%s",

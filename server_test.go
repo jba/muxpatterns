@@ -5,9 +5,12 @@
 package muxpatterns
 
 import (
+	"bufio"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -132,4 +135,36 @@ func TestPathValue(t *testing.T) {
 		}
 	}))
 	mux.ServeHTTP(nil, &http.Request{Method: "GET", URL: &url.URL{Path: "/now/is/the/time/for/all"}})
+}
+
+func BenchmarkRegister(b *testing.B) {
+	f, err := os.Open(filepath.Join("testdata", "patterns.txt"))
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer f.Close()
+	scan := bufio.NewScanner(f)
+	var patterns []string
+	for scan.Scan() {
+		pat := scan.Text()
+		if len(pat) == 0 || pat[0] == '#' {
+			continue
+		}
+		patterns = append(patterns, pat)
+	}
+	if scan.Err() != nil {
+		b.Fatal(scan.Err())
+	}
+	b.Logf("benchmarking with %d patterns", len(patterns))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		mux := NewServeMux()
+		for _, p := range patterns {
+			if err := mux.register(p, http.NotFoundHandler()); err != nil {
+				b.Fatal(err)
+			}
+		}
+		b.Logf("conflict calls: %d", mux.conflictCalls.Load())
+	}
 }
