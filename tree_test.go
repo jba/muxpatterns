@@ -182,37 +182,3 @@ func (n *node) print(w io.Writer, level int) {
 		n.print(w, level+1)
 	}
 }
-
-// func TestPatterns(t *testing.T) {
-// 	f, err := os.Open(filepath.Join("testdata", "patterns30.txt"))
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-// 	defer f.Close()
-// 	scan := bufio.NewScanner(f)
-// 	var patterns []string
-// 	for scan.Scan() {
-// 		pat := scan.Text()
-// 		if len(pat) == 0 || pat[0] == '#' {
-// 			continue
-// 		}
-// 		patterns = append(patterns, pat)
-// 	}
-// 	if scan.Err() != nil {
-// 		t.Fatal(scan.Err())
-// 	}
-// 	mux := NewServeMux()
-// 	for _, p := range patterns {
-// 		if err := mux.register(p, http.NotFoundHandler()); err != nil {
-// 			t.Fatal(err)
-// 		}
-// 	}
-// 	npats := 0
-// 	mux.tree.patterns(func(p *Pattern, _ http.Handler, _ string) error {
-// 		npats++
-// 		fmt.Println(p)
-// 		return nil
-// 	})
-// 	fmt.Println(npats)
-
-// }
