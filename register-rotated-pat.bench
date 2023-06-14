@@ -1,0 +1,30 @@
+goos: linux
+goarch: amd64
+pkg: github.com/jba/muxpatterns
+cpu: Intel(R) Xeon(R) CPU @ 2.20GHz
+BenchmarkRegister-8   	       1	1259945549 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 13517400
+BenchmarkRegister-8   	       1	1283687262 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 13517400
+BenchmarkRegister-8   	       1	1277344750 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 13517400
+BenchmarkRegister-8   	       1	1293561461 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 13517400
+BenchmarkRegister-8   	       1	1295861943 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 13517400
+BenchmarkRegister-8   	       1	1295704471 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 13517400
+PASS
+ok  	github.com/jba/muxpatterns	7.746s

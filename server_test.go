@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -142,6 +143,11 @@ func BenchmarkRegister(b *testing.B) {
 		b.Fatal(scan.Err())
 	}
 	b.Logf("benchmarking with %d patterns", len(patterns))
+	// To make path comparison harder, move API name to the end.
+	for i, p := range patterns {
+		patterns[i] = moveFirstSegmentToEnd(p)
+	}
+
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
@@ -153,4 +159,20 @@ func BenchmarkRegister(b *testing.B) {
 		}
 		b.Logf("conflict calls: %d", mux.conflictCalls.Load())
 	}
+}
+
+func moveFirstSegmentToEnd(pat string) string {
+	method, path, found := strings.Cut(pat, " ")
+	if !found {
+		panic("bad pattern:" + pat)
+	}
+	if len(path) == 0 || path[0] != '/' {
+		panic("bad path: " + path)
+	}
+	first, rest, found := strings.Cut(path[1:], "/")
+	if !found {
+		panic("missing /:" + path[1:])
+	}
+	path = "/" + rest + "/" + first
+	return method + " " + path
 }

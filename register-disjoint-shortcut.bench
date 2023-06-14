@@ -1,0 +1,48 @@
+goos: linux
+goarch: amd64
+pkg: github.com/jba/muxpatterns
+cpu: Intel(R) Xeon(R) CPU @ 2.20GHz
+BenchmarkRegister-8   	       2	 947193948 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:144: benchmarking with 5200 patterns
+    server_test.go:154: conflict calls: 13517400
+    server_test.go:144: benchmarking with 5200 patterns
+    server_test.go:154: conflict calls: 13517400
+    server_test.go:154: conflict calls: 13517400
+BenchmarkRegister-8   	       2	 934951642 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:144: benchmarking with 5200 patterns
+    server_test.go:154: conflict calls: 13517400
+    server_test.go:144: benchmarking with 5200 patterns
+    server_test.go:154: conflict calls: 13517400
+    server_test.go:154: conflict calls: 13517400
+BenchmarkRegister-8   	       2	 940600999 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:144: benchmarking with 5200 patterns
+    server_test.go:154: conflict calls: 13517400
+    server_test.go:144: benchmarking with 5200 patterns
+    server_test.go:154: conflict calls: 13517400
+    server_test.go:154: conflict calls: 13517400
+BenchmarkRegister-8   	       2	 963159562 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:144: benchmarking with 5200 patterns
+    server_test.go:154: conflict calls: 13517400
+    server_test.go:144: benchmarking with 5200 patterns
+    server_test.go:154: conflict calls: 13517400
+    server_test.go:154: conflict calls: 13517400
+BenchmarkRegister-8   	       2	 929820226 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:144: benchmarking with 5200 patterns
+    server_test.go:154: conflict calls: 13517400
+    server_test.go:144: benchmarking with 5200 patterns
+    server_test.go:154: conflict calls: 13517400
+    server_test.go:154: conflict calls: 13517400
+BenchmarkRegister-8   	       2	 934770076 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:144: benchmarking with 5200 patterns
+    server_test.go:154: conflict calls: 13517400
+    server_test.go:144: benchmarking with 5200 patterns
+    server_test.go:154: conflict calls: 13517400
+    server_test.go:154: conflict calls: 13517400
+PASS
+ok  	github.com/jba/muxpatterns	17.035s

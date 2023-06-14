@@ -310,6 +310,9 @@ func (p1 *Pattern) compareMethods(p2 *Pattern) relationship {
 //	overlaps: there is a path that both match, but neither is more specific
 //	disjoint: there is no path that both match
 func (p1 *Pattern) comparePaths(p2 *Pattern) relationship {
+	if len(p1.segments) != len(p2.segments) && !p1.isMulti() && !p2.isMulti() {
+		return disjoint
+	}
 	// Track whether a single (non-multi) wildcard in p1 matched
 	// a literal in p2, and vice versa.
 	// We care about these because if a wildcard matches a literal, then the
