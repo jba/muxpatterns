@@ -55,7 +55,7 @@ func buildTree(pats ...string) *node {
 		if err != nil {
 			panic(err)
 		}
-		root.addPattern(pat, nil, "")
+		root.addPattern(pat, nil)
 	}
 	return root
 }

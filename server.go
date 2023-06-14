@@ -10,6 +10,7 @@ package muxpatterns
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -30,10 +31,21 @@ type ServeMux struct {
 	// This grows without bound!
 	matches       map[*http.Request]match
 	conflictCalls atomic.Int32
+	segmentIndex  map[segmentIndexKey][]*Pattern
+	multis        []*Pattern
+}
+
+type segmentIndexKey struct {
+	pos int    // 0-based segment position
+	s   string // literal, or empty for wildcard
 }
 
 func NewServeMux() *ServeMux {
-	return &ServeMux{matches: map[*http.Request]match{}}
+	return &ServeMux{
+		tree:         &node{},
+		matches:      map[*http.Request]match{},
+		segmentIndex: map[segmentIndexKey][]*Pattern{},
+	}
 }
 
 func (mux *ServeMux) Handle(pattern string, handler http.Handler) {
@@ -43,7 +55,7 @@ func (mux *ServeMux) Handle(pattern string, handler http.Handler) {
 }
 
 func (mux *ServeMux) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
-	// Does not call Handle so that we retrieve the right source location in ServeMux.register.
+	// Does not call Handle so that  ServeMux.register retrieves the right source location.
 	if err := mux.register(pattern, http.HandlerFunc(handler)); err != nil {
 		panic(err)
 	}
@@ -56,32 +68,93 @@ func (mux *ServeMux) register(pattern string, handler http.Handler) error {
 	if handler == nil {
 		return errors.New("http: nil handler")
 	}
-	loc := callerLocation()
-	mux.mu.Lock()
-	defer mux.mu.Unlock()
+
 	pat, err := Parse(pattern)
 	if err != nil {
 		return err
 	}
+	pat.loc = callerLocation()
+	mux.mu.Lock()
+	defer mux.mu.Unlock()
 	// Check for conflict.
 	npats := 0
-	if err := mux.tree.patterns(func(pat2 *Pattern, _ http.Handler, loc2 string) error {
+	if err := mux.possiblyConflictingPatterns(pat, func(pat2 *Pattern) error {
 		npats++
 		mux.conflictCalls.Add(1)
 		if pat.ConflictsWith(pat2) {
 			d := describeRel(pat, pat2)
 			return fmt.Errorf("pattern %q (registered at %s) conflicts with pattern %q (registered at %s):\n%s",
-				pat, loc, pat2, loc2, d)
+				pat, pat.loc, pat2, pat2.loc, d)
 		}
 		return nil
 	}); err != nil {
 		return err
 	}
-	if mux.tree == nil {
-		mux.tree = &node{}
-	}
-	mux.tree.addPattern(pat, handler, loc)
+	mux.tree.addPattern(pat, handler)
+	mux.addToIndex(pat)
 	return nil
+}
+
+// requires mux.mu
+func (mux *ServeMux) addToIndex(pat *Pattern) {
+	if pat.lastSegment().multi {
+		mux.multis = append(mux.multis, pat)
+	} else {
+		for pos, seg := range pat.segments {
+			key := segmentIndexKey{pos: pos, s: ""}
+			if !seg.wild {
+				key.s = seg.s
+			}
+			mux.segmentIndex[key] = append(mux.segmentIndex[key], pat)
+		}
+	}
+}
+
+func (mux *ServeMux) possiblyConflictingPatterns(pat *Pattern, f func(*Pattern) error) (err error) {
+
+	apply := func(pats []*Pattern) {
+		if err != nil {
+			return
+		}
+		for _, p := range pats {
+			err = f(p)
+			if err != nil {
+				break
+			}
+		}
+	}
+
+	switch {
+	case pat.lastSegment().s == "/":
+		apply(mux.segmentIndex[segmentIndexKey{s: "/", pos: len(pat.segments) - 1}])
+		apply(mux.multis)
+	default:
+		// For ordinary patterns, the only conflicts can be with patterns that
+		// have the same literal or a wildcard at some literal position,
+		// or with a multi.
+		// Find the position with the fewest patterns.
+		var lmin, wmin []*Pattern
+		min := math.MaxInt
+		for i, seg := range pat.segments {
+			if seg.multi {
+				break
+			}
+			if !seg.wild {
+				lpats := mux.segmentIndex[segmentIndexKey{s: seg.s, pos: i}]
+				wpats := mux.segmentIndex[segmentIndexKey{s: "", pos: i}]
+				sum := len(lpats) + len(wpats)
+				if sum < min {
+					lmin = lpats
+					wmin = wpats
+					min = sum
+				}
+			}
+		}
+		apply(lmin)
+		apply(wmin)
+		apply(mux.multis)
+	}
+	return err
 }
 
 func callerLocation() string {
@@ -95,10 +168,6 @@ func callerLocation() string {
 func (mux *ServeMux) Handler(r *http.Request) (h http.Handler, pattern string) {
 	h, _, sp, _ := mux.handler(r)
 	return h, sp
-}
-
-func (p *Pattern) isMulti() bool {
-	return p.segments[len(p.segments)-1].multi
 }
 
 func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -226,7 +295,7 @@ func exactMatch(n *node, path string) bool {
 	if len(path) > 0 && path[len(path)-1] != '/' {
 		// If the path doesn't end in a trailing slash, then
 		// an exact match is one that doesn't end in a multi.
-		return !n.pattern.isMulti()
+		return !n.pattern.lastSegment().multi
 	}
 	// Only patterns ending in {$} or a multi wildcard can
 	// match a path with a trailing slash.

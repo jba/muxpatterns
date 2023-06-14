@@ -17,9 +17,8 @@ import (
 type node struct {
 	// A leaf node holds a single pattern and the Handler it was registered
 	// with.
-	pattern  *Pattern
-	handler  http.Handler
-	location string // source location of registering call, for helpful messages
+	pattern *Pattern
+	handler http.Handler
 
 	// An interior node maps parts of the incoming request to child nodes.
 	// special children keys:
@@ -44,18 +43,18 @@ func nextSegment(path string) (seg, rest string) {
 	return path[:i], path[i:]
 }
 
-func (root *node) addPattern(p *Pattern, h http.Handler, loc string) {
+func (root *node) addPattern(p *Pattern, h http.Handler) {
 	// First level of tree is host.
 	n := root.addChild(p.host)
 	// Second level of tree is method.
 	n = n.addChild(p.method)
 	// Remaining levels are path.
-	n.addSegments(p.segments, p, h, loc)
+	n.addSegments(p.segments, p, h)
 }
 
-func (n *node) addSegments(segs []segment, p *Pattern, h http.Handler, loc string) {
+func (n *node) addSegments(segs []segment, p *Pattern, h http.Handler) {
 	if len(segs) == 0 {
-		n.set(p, h, loc)
+		n.set(p, h)
 		return
 	}
 	seg := segs[0]
@@ -67,21 +66,20 @@ func (n *node) addSegments(segs []segment, p *Pattern, h http.Handler, loc strin
 			panic("dup multi wildcards")
 		}
 		c := n.addChild("*")
-		c.set(p, h, loc)
+		c.set(p, h)
 	} else if seg.wild {
-		n.addChild("").addSegments(segs[1:], p, h, loc)
+		n.addChild("").addSegments(segs[1:], p, h)
 	} else {
-		n.addChild(seg.s).addSegments(segs[1:], p, h, loc)
+		n.addChild(seg.s).addSegments(segs[1:], p, h)
 	}
 }
 
-func (n *node) set(p *Pattern, h http.Handler, loc string) {
+func (n *node) set(p *Pattern, h http.Handler) {
 	if n.pattern != nil || n.handler != nil {
 		panic("non-nil leaf fields")
 	}
 	n.pattern = p
 	n.handler = h
-	n.location = loc
 }
 
 func (n *node) addChild(key string) *node {
@@ -160,12 +158,12 @@ func (n *node) matchPath(path string, matches []string) (*node, []string) {
 	return nil, nil
 }
 
-func (n *node) patterns(f func(*Pattern, http.Handler, string) error) error {
+func (n *node) patterns(f func(*Pattern, http.Handler) error) error {
 	if n == nil {
 		return nil
 	}
 	if n.pattern != nil {
-		if err := f(n.pattern, n.handler, n.location); err != nil {
+		if err := f(n.pattern, n.handler); err != nil {
 			return err
 		}
 	}

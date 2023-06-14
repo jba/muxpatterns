@@ -41,6 +41,8 @@ type Pattern struct {
 	// Paths ending in "{$}" are represented with the literal segment "/".
 	// This makes most algorithms simpler.
 	segments []segment
+	loc      string // source location of registering call, for helpful messages
+
 }
 
 // A segment is a pattern piece that matches one or more path segments, or
@@ -84,6 +86,10 @@ func (s segment) String() string {
 	default: // Literal.
 		return "/" + s.s
 	}
+}
+
+func (p *Pattern) lastSegment() segment {
+	return p.segments[len(p.segments)-1]
 }
 
 // Parse parses a string into a Pattern.
@@ -310,7 +316,7 @@ func (p1 *Pattern) compareMethods(p2 *Pattern) relationship {
 //	overlaps: there is a path that both match, but neither is more specific
 //	disjoint: there is no path that both match
 func (p1 *Pattern) comparePaths(p2 *Pattern) relationship {
-	if len(p1.segments) != len(p2.segments) && !p1.isMulti() && !p2.isMulti() {
+	if len(p1.segments) != len(p2.segments) && !p1.lastSegment().multi && !p2.lastSegment().multi {
 		return disjoint
 	}
 	// Track whether a single (non-multi) wildcard in p1 matched
