@@ -18,19 +18,28 @@ import (
 // an exhaustive loop through all patterns.
 func FuzzIndex(f *testing.F) {
 	inits := []string{"/a", "/a/b", "/{x0}", "/{x0}/b", "/a/{x0}", "/a/{$}", "/a/b/{$}",
-		"/a/", "/a/b/", "/{x}/b/c/{$}"}
+		"/a/", "/a/b/", "/{x}/b/c/{$}", "GET /{x0}/"}
+
 	var patterns []*Pattern
+	idx := newIndex()
+
+	compare := func(pat *Pattern) {
+		got := indexConflicts(pat, idx)
+		want := trueConflicts(pat, patterns)
+		if !slices.Equal(got, want) {
+			f.Fatalf("%q:\ngot  %s\nwant %s", pat, got, want)
+		}
+	}
+
 	for _, p := range inits {
 		pat, err := Parse(p)
 		if err != nil {
 			f.Fatal(err)
 		}
+		compare(pat)
 		patterns = append(patterns, pat)
-	}
-	idx := newIndex()
-	for _, p := range patterns {
-		idx.addPattern(p)
-		f.Add(bytesFromPattern(p))
+		idx.addPattern(pat)
+		f.Add(bytesFromPattern(pat))
 	}
 
 	f.Fuzz(func(t *testing.T, pb []byte) {
@@ -38,11 +47,7 @@ func FuzzIndex(f *testing.F) {
 		if pat == nil {
 			return
 		}
-		got := indexConflicts(pat, idx)
-		want := trueConflicts(pat, patterns)
-		if !slices.Equal(got, want) {
-			t.Errorf("%q:\ngot  %s\nwant %s", pat, got, want)
-		}
+		compare(pat)
 	})
 }
 
@@ -69,6 +74,7 @@ func indexConflicts(pat *Pattern, idx *index) []string {
 	return slices.Compact(s)
 }
 
+// TODO: incorporate host and method; make encoding denser.
 func bytesToPattern(bs []byte) *Pattern {
 	if len(bs) == 0 {
 		return nil

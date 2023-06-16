@@ -95,11 +95,19 @@ func (idx *index) possiblyConflictingPatterns(pat *Pattern, f func(*Pattern) err
 			apply(wmin)
 		}
 		apply(idx.multis)
-		// A multi pattern can also conflict with a dollar pattern of the same
-		// number of segments or more.
-		// If the multi has a literal, we picked up these dollar patterns above.
-		// If it doesn't, then it's more general than any of those dollar patterns.
-		// So there is nothing extra to do.
+		if pat.lastSegment().multi {
+			// A multi pattern can also conflict with a dollar pattern of the same
+			// number of segments or more.
+			// If the multi has a literal, we picked up these dollar patterns above.
+			// If it doesn't, then it's more general than any of those dollar patterns.
+			// But if it has a method we have to consider patterns without a method.
+			// TODO: make this more precise.
+			if pat.method != "" {
+				for _, pats := range idx.segments {
+					apply(pats)
+				}
+			}
+		}
 	}
 	return err
 }
