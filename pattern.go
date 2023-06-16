@@ -34,6 +34,7 @@ var methods = []string{
 
 // A Pattern is something that can be matched against an HTTP request.
 type Pattern struct {
+	str    string // original string
 	method string
 	host   string
 	// The representation of a path differs from the surface syntax.
@@ -56,9 +57,11 @@ type segment struct {
 	multi bool // "..." wildcard
 }
 
+func (p *Pattern) String() string { return p.str }
+
 func (p *Pattern) Method() string { return p.method }
 
-func (p *Pattern) String() string {
+func (p *Pattern) debugString() string {
 	var b strings.Builder
 	if p.method != "" {
 		b.WriteString(p.method)
@@ -68,21 +71,19 @@ func (p *Pattern) String() string {
 		b.WriteString(p.host)
 	}
 	for _, s := range p.segments {
-		b.WriteString(s.String())
+		b.WriteString(s.debugString())
 	}
 	return b.String()
 }
 
-func (s segment) String() string {
+func (s segment) debugString() string {
 	switch {
-	case s.multi && s.s == "": // Trailing slash.
-		return "/"
 	case s.multi:
 		return fmt.Sprintf("/{%s...}", s.s)
 	case s.wild:
 		return fmt.Sprintf("/{%s}", s.s)
 	case s.s == "/":
-		return "/{$}"
+		return "/"
 	default: // Literal.
 		return "/" + s.s
 	}
@@ -119,7 +120,7 @@ func Parse(s string) (*Pattern, error) {
 		method = ""
 	}
 
-	p := &Pattern{method: method}
+	p := &Pattern{str: s, method: method}
 	if method != "" && !slices.Contains(methods, method) {
 		return nil, fmt.Errorf("bad method %q; need one of %v", method, methods)
 	}

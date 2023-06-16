@@ -111,7 +111,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h, pat, _, matches := mux.handler(r)
-	if pat != nil {
+	if pat != nil && matches != nil {
 		mux.mu.Lock()
 		mux.matches[r] = match{pat, matches}
 		mux.mu.Unlock()
@@ -165,6 +165,18 @@ func (mux *ServeMux) handler(r *http.Request) (h http.Handler, pattern *Pattern,
 	return n.handler, n.pattern, n.pattern.String(), matches
 }
 
+func mightNeedCleaning(p string) bool {
+	var prev byte = ' '
+	for i := 0; i < len(p); i++ {
+		c := p[i]
+		if prev == '/' && (c == '/' || c == '.') {
+			return true
+		}
+		prev = c
+	}
+	return false
+}
+
 // cleanPath returns the canonical path for p, eliminating . and .. elements.
 func cleanPath(p string) string {
 	if p == "" {
@@ -173,6 +185,11 @@ func cleanPath(p string) string {
 	if p[0] != '/' {
 		p = "/" + p
 	}
+
+	if !mightNeedCleaning(p) {
+		return p
+	}
+
 	np := path.Clean(p)
 	// path.Clean removes trailing slash except for root;
 	// put the trailing slash back if necessary.
@@ -209,6 +226,7 @@ func (mux *ServeMux) matchOrRedirect(method, host, path string, u *url.URL) (*no
 	// If we have an exact match, then don't redirect.
 	if !exactMatch(n, path) && u != nil {
 		// If there is an exact match with a trailing slash, then redirect.
+
 		path += "/"
 		n2, _ := mux.tree.match(method, host, path)
 		if exactMatch(n2, path) {
