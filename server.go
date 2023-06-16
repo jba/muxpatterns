@@ -10,7 +10,6 @@ package muxpatterns
 import (
 	"errors"
 	"fmt"
-	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -31,20 +30,14 @@ type ServeMux struct {
 	// This grows without bound!
 	matches       map[*http.Request]match
 	conflictCalls atomic.Int32
-	segmentIndex  map[segmentIndexKey][]*Pattern
-	multis        []*Pattern
-}
-
-type segmentIndexKey struct {
-	pos int    // 0-based segment position
-	s   string // literal, or empty for wildcard
+	index         *index
 }
 
 func NewServeMux() *ServeMux {
 	return &ServeMux{
-		tree:         &node{},
-		matches:      map[*http.Request]match{},
-		segmentIndex: map[segmentIndexKey][]*Pattern{},
+		tree:    &node{},
+		matches: map[*http.Request]match{},
+		index:   newIndex(),
 	}
 }
 
@@ -78,7 +71,7 @@ func (mux *ServeMux) register(pattern string, handler http.Handler) error {
 	defer mux.mu.Unlock()
 	// Check for conflict.
 	npats := 0
-	if err := mux.possiblyConflictingPatterns(pat, func(pat2 *Pattern) error {
+	if err := mux.index.possiblyConflictingPatterns(pat, func(pat2 *Pattern) error {
 		npats++
 		mux.conflictCalls.Add(1)
 		if pat.ConflictsWith(pat2) {
@@ -91,82 +84,8 @@ func (mux *ServeMux) register(pattern string, handler http.Handler) error {
 		return err
 	}
 	mux.tree.addPattern(pat, handler)
-	mux.addToIndex(pat)
+	mux.index.addPattern(pat)
 	return nil
-}
-
-// requires mux.mu
-func (mux *ServeMux) addToIndex(pat *Pattern) {
-	if pat.lastSegment().multi {
-		mux.multis = append(mux.multis, pat)
-	} else {
-		for pos, seg := range pat.segments {
-			key := segmentIndexKey{pos: pos, s: ""}
-			if !seg.wild {
-				key.s = seg.s
-			}
-			mux.segmentIndex[key] = append(mux.segmentIndex[key], pat)
-		}
-	}
-}
-
-// possiblyConflictingPatterns calls f on all patterns that might conflict with pat.
-func (mux *ServeMux) possiblyConflictingPatterns(pat *Pattern, f func(*Pattern) error) (err error) {
-	// Terminology:
-	//   dollar pattern: one ending in "{$}"
-	//   multi pattern: one ending in a trailing slash or "{x...}" wildcard
-	//   ordinary pattern: neither of the above
-
-	apply := func(pats []*Pattern) {
-		if err != nil {
-			return
-		}
-		for _, p := range pats {
-			err = f(p)
-			if err != nil {
-				break
-			}
-		}
-	}
-
-	switch {
-	case pat.lastSegment().s == "/":
-		// All paths that a dollar pattern matches end in a slash; no paths that an ordinary
-		// pattern matches do. So only other dollar or multi patterns can conflict with a dollar pattern.
-		// Furthermore, conflicting dollar patterns must have the {$} in the same position.
-		apply(mux.segmentIndex[segmentIndexKey{s: "/", pos: len(pat.segments) - 1}])
-		apply(mux.multis)
-	default:
-		// For ordinary patterns, the only conflicts can be with patterns that
-		// have the same literal or a wildcard at some literal position,
-		// or with a multi.
-		// Find the position with the fewest patterns.
-		var lmin, wmin []*Pattern
-		min := math.MaxInt
-		for i, seg := range pat.segments {
-			if seg.multi {
-				break
-			}
-			if !seg.wild {
-				lpats := mux.segmentIndex[segmentIndexKey{s: seg.s, pos: i}]
-				wpats := mux.segmentIndex[segmentIndexKey{s: "", pos: i}]
-				sum := len(lpats) + len(wpats)
-				if sum < min {
-					lmin = lpats
-					wmin = wpats
-					min = sum
-				}
-			}
-		}
-		apply(lmin)
-		apply(wmin)
-		apply(mux.multis)
-		// A multi pattern can also conflict with a dollar pattern of the same
-		// number of segments or more: e.g. "/a/" vs. "/{x}/b/c/d/e/{$}".
-		// TODO: the 'or more' part.
-		apply(mux.segmentIndex[segmentIndexKey{s: "/", pos: len(pat.segments) - 1}])
-	}
-	return err
 }
 
 func callerLocation() string {
