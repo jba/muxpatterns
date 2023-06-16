@@ -110,7 +110,12 @@ func (mux *ServeMux) addToIndex(pat *Pattern) {
 	}
 }
 
+// possiblyConflictingPatterns calls f on all patterns that might conflict with pat.
 func (mux *ServeMux) possiblyConflictingPatterns(pat *Pattern, f func(*Pattern) error) (err error) {
+	// Terminology:
+	//   dollar pattern: one ending in "{$}"
+	//   multi pattern: one ending in a trailing slash or "{x...}" wildcard
+	//   ordinary pattern: neither of the above
 
 	apply := func(pats []*Pattern) {
 		if err != nil {
@@ -126,6 +131,9 @@ func (mux *ServeMux) possiblyConflictingPatterns(pat *Pattern, f func(*Pattern) 
 
 	switch {
 	case pat.lastSegment().s == "/":
+		// All paths that a dollar pattern matches end in a slash; no paths that an ordinary
+		// pattern matches do. So only other dollar or multi patterns can conflict with a dollar pattern.
+		// Furthermore, conflicting dollar patterns must have the {$} in the same position.
 		apply(mux.segmentIndex[segmentIndexKey{s: "/", pos: len(pat.segments) - 1}])
 		apply(mux.multis)
 	default:
@@ -153,6 +161,10 @@ func (mux *ServeMux) possiblyConflictingPatterns(pat *Pattern, f func(*Pattern) 
 		apply(lmin)
 		apply(wmin)
 		apply(mux.multis)
+		// A multi pattern can also conflict with a dollar pattern of the same
+		// number of segments or more: e.g. "/a/" vs. "/{x}/b/c/d/e/{$}".
+		// TODO: the 'or more' part.
+		apply(mux.segmentIndex[segmentIndexKey{s: "/", pos: len(pat.segments) - 1}])
 	}
 	return err
 }
