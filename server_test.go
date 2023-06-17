@@ -8,6 +8,7 @@ import (
 	"bufio"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -105,23 +106,54 @@ func TestExactMatch(t *testing.T) {
 }
 
 func TestPathValue(t *testing.T) {
-	mux := NewServeMux()
-	mux.Handle("/{a}/is/{b}/{c...}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		for _, test := range []struct {
-			name, want string
-		}{
-			{"a", "now"},
-			{"b", "the"},
-			{"c", "time/for/all"},
-			{"d", ""},
-		} {
-			got := mux.PathValue(r, test.name)
-			if got != test.want {
-				t.Errorf("%q: got %q, want %q", test.name, got, test.want)
+	for _, test := range []struct {
+		pattern string
+		url     string
+		want    map[string]string
+	}{
+		{
+			"/{a}/is/{b}/{c...}",
+			"/now/is/the/time/for/all",
+			map[string]string{
+				"a": "now",
+				"b": "the",
+				"c": "time/for/all",
+				"d": "",
+			},
+		},
+		{
+			"/names/{name}/{other...}",
+			"/names/" + url.PathEscape("/john") + "/address",
+			map[string]string{
+				"name":  "john",
+				"other": "address",
+			},
+		},
+		{
+			"/names/{name}/{other...}",
+			"/names/" + url.PathEscape("john/doe") + "/address",
+			map[string]string{
+				"name":  "john",
+				"other": "doe/address",
+			},
+		},
+	} {
+		mux := NewServeMux()
+		mux.Handle(test.pattern, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			for name, want := range test.want {
+				got := mux.PathValue(r, name)
+				if got != want {
+					t.Errorf("%q, %q: got %q, want %q", test.pattern, name, got, want)
+				}
 			}
+		}))
+		server := httptest.NewServer(mux)
+		defer server.Close()
+		_, err := http.Get(server.URL + test.url)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}))
-	mux.ServeHTTP(nil, &http.Request{Method: "GET", URL: &url.URL{Path: "/now/is/the/time/for/all"}})
+	}
 }
 
 func BenchmarkRegister(b *testing.B) {
