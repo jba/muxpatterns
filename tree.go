@@ -153,7 +153,11 @@ func (n *node) matchPath(path string, matches []string) (*node, []string) {
 	}
 	// Match multi wildcard to the rest of the pattern.
 	if c := n.findChild("*"); c != nil {
-		return c, append(matches, path[1:]) // remove initial slash
+		// Don't record a match for a nameless wildcard (which arises from a trailing slash).
+		if c.pattern.lastSegment().s != "" {
+			matches = append(matches, path[1:]) // remove initial slash
+		}
+		return c, matches
 	}
 	return nil, nil
 }

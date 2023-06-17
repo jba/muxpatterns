@@ -61,11 +61,8 @@ func buildTree(pats ...string) *node {
 }
 
 func TestAddPattern(t *testing.T) {
-	want := `nil
-"":
-    nil
+	want := `"":
     "":
-        nil
         "a":
             "/a"
             "":
@@ -79,13 +76,10 @@ func TestAddPattern(t *testing.T) {
                 "/":
                     "/a/b/{$}"
         "g":
-            nil
             "":
-                nil
                 "j":
                     "/g/{x}/j"
             "h":
-                nil
                 "i":
                     "/g/h/i"
 `
@@ -108,7 +102,7 @@ func TestNodeMatch(t *testing.T) {
 
 	test := func(tree *node, tests []testCase) {
 		for _, test := range tests {
-			gotNode, gotMatches := tree.match("GET", "", test.path)
+			gotNode, gotMatches := tree.match(test.method, test.host, test.path)
 			got := ""
 			if gotNode != nil {
 				got = gotNode.pattern.String()
@@ -134,25 +128,35 @@ func TestNodeMatch(t *testing.T) {
 		{"Get", "", "/g/h/j", "/g/{x}/j", []string{"h"}},
 	})
 
-	tree := buildTree("/item/",
+	tree := buildTree(
+		"/item/",
 		"POST /item/{user}",
 		"/item/{user}",
 		"/item/{user}/{id}",
 		"/item/{user}/new",
 		"/item/{$}",
-		"POST alt.com/item/{userp}",
+		"POST alt.com/item/{user}",
 		"/path/{p...}")
+
 	test(tree, []testCase{
 		{"GET", "", "/item/jba",
 			"/item/{user}", []string{"jba"}},
-		// {"POST", "", "/item/jba/17", []string{"jba", "17"}},
-		// {"GET", "", "/item/jba/new", []string{"jba"}},
-		// {"GET", "", "/item/", []string{}},
-		// {"GET", "", "/item/jba/17/line2",nil},
-		// {"POST", "alt.com", "/item/jba", []string{"jba"}},
-		// {"GET", "alt.com", "/item/jba", []string{"jba"}},
-		// {"GET", "", "/item", nil}, // does not match
-		// {"GET", "", "/path/to/file", []string{"to/file"}},
+		{"POST", "", "/item/jba/17",
+			"/item/{user}/{id}", []string{"jba", "17"}},
+		{"GET", "", "/item/jba/new",
+			"/item/{user}/new", []string{"jba"}},
+		{"GET", "", "/item/",
+			"/item/{$}", []string{}},
+		{"GET", "", "/item/jba/17/line2",
+			"/item/", nil},
+		{"POST", "alt.com", "/item/jba",
+			"POST alt.com/item/{user}", []string{"jba"}},
+		{"GET", "alt.com", "/item/jba",
+			"/item/{user}", []string{"jba"}},
+		{"GET", "", "/item",
+			"", nil}, // does not match
+		{"GET", "", "/path/to/file",
+			"/path/{p...}", []string{"to/file"}},
 	})
 }
 
@@ -161,8 +165,6 @@ func (n *node) print(w io.Writer, level int) {
 	indent := strings.Repeat("    ", level)
 	if n.pattern != nil {
 		fmt.Fprintf(w, "%s%q\n", indent, n.pattern)
-	} else {
-		fmt.Fprintf(w, "%snil\n", indent)
 	}
 	if n.emptyChild != nil {
 		fmt.Fprintf(w, "%s%q:\n", indent, "")

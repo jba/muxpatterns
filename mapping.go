@@ -7,7 +7,7 @@ package muxpatterns
 // A mapping is a set of key-value pairs.
 // An zero mapping is empty and ready to use.
 //
-// Mappings try to pick a representation that makes find most efficient.
+// Mappings try to pick a representation that makes [mapping.find] most efficient.
 type mapping[K comparable, V any] struct {
 	s []entry[K, V] // for few pairs
 	m map[K]V       // for many pairs
