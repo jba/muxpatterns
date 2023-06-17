@@ -1,0 +1,306 @@
+goos: linux
+goarch: amd64
+pkg: github.com/jba/muxpatterns
+cpu: Intel(R) Xeon(R) CPU @ 2.20GHz
+BenchmarkFindChild/n=2/rep=linear-8         	207995134	         5.699 ns/op
+BenchmarkFindChild/n=2/rep=linear-8         	208273915	         5.779 ns/op
+BenchmarkFindChild/n=2/rep=linear-8         	207610705	         5.808 ns/op
+BenchmarkFindChild/n=2/rep=linear-8         	206389893	         5.771 ns/op
+BenchmarkFindChild/n=2/rep=linear-8         	207984237	         5.728 ns/op
+BenchmarkFindChild/n=2/rep=linear-8         	207997990	         5.724 ns/op
+BenchmarkFindChild/n=2/rep=linear-8         	206239836	         5.808 ns/op
+BenchmarkFindChild/n=2/rep=linear-8         	208238568	         5.766 ns/op
+BenchmarkFindChild/n=2/rep=linear-8         	210401846	         5.757 ns/op
+BenchmarkFindChild/n=2/rep=linear-8         	207314162	         5.775 ns/op
+BenchmarkFindChild/n=2/rep=map-8            	97380591	        12.33 ns/op
+BenchmarkFindChild/n=2/rep=map-8            	93075486	        12.48 ns/op
+BenchmarkFindChild/n=2/rep=map-8            	97407158	        12.30 ns/op
+BenchmarkFindChild/n=2/rep=map-8            	97600094	        12.26 ns/op
+BenchmarkFindChild/n=2/rep=map-8            	98067112	        12.29 ns/op
+BenchmarkFindChild/n=2/rep=map-8            	98096654	        12.37 ns/op
+BenchmarkFindChild/n=2/rep=map-8            	97978978	        12.26 ns/op
+BenchmarkFindChild/n=2/rep=map-8            	95051732	        12.39 ns/op
+BenchmarkFindChild/n=2/rep=map-8            	95670007	        12.27 ns/op
+BenchmarkFindChild/n=2/rep=map-8            	98813056	        12.37 ns/op
+BenchmarkFindChild/n=2/rep=hybrid8-8        	195249596	         6.252 ns/op
+BenchmarkFindChild/n=2/rep=hybrid8-8        	193689964	         6.430 ns/op
+BenchmarkFindChild/n=2/rep=hybrid8-8        	186364208	         6.461 ns/op
+BenchmarkFindChild/n=2/rep=hybrid8-8        	195335679	         6.287 ns/op
+BenchmarkFindChild/n=2/rep=hybrid8-8        	187539993	         6.478 ns/op
+BenchmarkFindChild/n=2/rep=hybrid8-8        	194749239	         6.307 ns/op
+BenchmarkFindChild/n=2/rep=hybrid8-8        	186711925	         6.417 ns/op
+BenchmarkFindChild/n=2/rep=hybrid8-8        	190305475	         6.228 ns/op
+BenchmarkFindChild/n=2/rep=hybrid8-8        	188615214	         6.440 ns/op
+BenchmarkFindChild/n=2/rep=hybrid8-8        	195816381	         6.293 ns/op
+BenchmarkFindChild/n=4/rep=linear-8         	156541377	         7.652 ns/op
+BenchmarkFindChild/n=4/rep=linear-8         	154677279	         7.734 ns/op
+BenchmarkFindChild/n=4/rep=linear-8         	158226530	         7.577 ns/op
+BenchmarkFindChild/n=4/rep=linear-8         	158291408	         7.632 ns/op
+BenchmarkFindChild/n=4/rep=linear-8         	157280667	         7.664 ns/op
+BenchmarkFindChild/n=4/rep=linear-8         	155581594	         7.661 ns/op
+BenchmarkFindChild/n=4/rep=linear-8         	154764630	         7.656 ns/op
+BenchmarkFindChild/n=4/rep=linear-8         	155277357	         7.683 ns/op
+BenchmarkFindChild/n=4/rep=linear-8         	156871627	         7.647 ns/op
+BenchmarkFindChild/n=4/rep=linear-8         	154808166	         7.702 ns/op
+BenchmarkFindChild/n=4/rep=map-8            	75487740	        15.75 ns/op
+BenchmarkFindChild/n=4/rep=map-8            	76773687	        15.87 ns/op
+BenchmarkFindChild/n=4/rep=map-8            	73799529	        15.96 ns/op
+BenchmarkFindChild/n=4/rep=map-8            	75382702	        16.02 ns/op
+BenchmarkFindChild/n=4/rep=map-8            	75298596	        15.84 ns/op
+BenchmarkFindChild/n=4/rep=map-8            	74569138	        15.91 ns/op
+BenchmarkFindChild/n=4/rep=map-8            	74214044	        15.95 ns/op
+BenchmarkFindChild/n=4/rep=map-8            	76544734	        15.87 ns/op
+BenchmarkFindChild/n=4/rep=map-8            	75079118	        15.76 ns/op
+BenchmarkFindChild/n=4/rep=map-8            	75112142	        15.77 ns/op
+BenchmarkFindChild/n=4/rep=hybrid8-8        	161119357	         7.429 ns/op
+BenchmarkFindChild/n=4/rep=hybrid8-8        	161771256	         7.450 ns/op
+BenchmarkFindChild/n=4/rep=hybrid8-8        	161444072	         7.418 ns/op
+BenchmarkFindChild/n=4/rep=hybrid8-8        	160962537	         7.435 ns/op
+BenchmarkFindChild/n=4/rep=hybrid8-8        	162173955	         7.425 ns/op
+BenchmarkFindChild/n=4/rep=hybrid8-8        	161665297	         7.378 ns/op
+BenchmarkFindChild/n=4/rep=hybrid8-8        	156838786	         7.376 ns/op
+BenchmarkFindChild/n=4/rep=hybrid8-8        	159527090	         7.394 ns/op
+BenchmarkFindChild/n=4/rep=hybrid8-8        	160810305	         7.367 ns/op
+BenchmarkFindChild/n=4/rep=hybrid8-8        	161821926	         7.371 ns/op
+BenchmarkFindChild/n=8/rep=linear-8         	100000000	        10.65 ns/op
+BenchmarkFindChild/n=8/rep=linear-8         	100000000	        10.58 ns/op
+BenchmarkFindChild/n=8/rep=linear-8         	100000000	        10.58 ns/op
+BenchmarkFindChild/n=8/rep=linear-8         	100000000	        10.57 ns/op
+BenchmarkFindChild/n=8/rep=linear-8         	100000000	        10.58 ns/op
+BenchmarkFindChild/n=8/rep=linear-8         	100000000	        10.56 ns/op
+BenchmarkFindChild/n=8/rep=linear-8         	100000000	        10.67 ns/op
+BenchmarkFindChild/n=8/rep=linear-8         	100000000	        10.64 ns/op
+BenchmarkFindChild/n=8/rep=linear-8         	100000000	        10.65 ns/op
+BenchmarkFindChild/n=8/rep=linear-8         	100000000	        10.59 ns/op
+BenchmarkFindChild/n=8/rep=map-8            	66957544	        17.63 ns/op
+BenchmarkFindChild/n=8/rep=map-8            	66535189	        17.58 ns/op
+BenchmarkFindChild/n=8/rep=map-8            	66895414	        17.87 ns/op
+BenchmarkFindChild/n=8/rep=map-8            	68151207	        17.58 ns/op
+BenchmarkFindChild/n=8/rep=map-8            	67149907	        17.54 ns/op
+BenchmarkFindChild/n=8/rep=map-8            	67597224	        17.68 ns/op
+BenchmarkFindChild/n=8/rep=map-8            	68420566	        17.65 ns/op
+BenchmarkFindChild/n=8/rep=map-8            	67450113	        17.54 ns/op
+BenchmarkFindChild/n=8/rep=map-8            	65558078	        17.70 ns/op
+BenchmarkFindChild/n=8/rep=map-8            	66831382	        17.65 ns/op
+BenchmarkFindChild/n=8/rep=hybrid8-8        	131925446	         9.060 ns/op
+BenchmarkFindChild/n=8/rep=hybrid8-8        	132017784	         9.158 ns/op
+BenchmarkFindChild/n=8/rep=hybrid8-8        	131611024	         9.138 ns/op
+BenchmarkFindChild/n=8/rep=hybrid8-8        	131550402	         9.126 ns/op
+BenchmarkFindChild/n=8/rep=hybrid8-8        	130144252	         9.225 ns/op
+BenchmarkFindChild/n=8/rep=hybrid8-8        	129949351	         9.162 ns/op
+BenchmarkFindChild/n=8/rep=hybrid8-8        	132261187	         9.217 ns/op
+BenchmarkFindChild/n=8/rep=hybrid8-8        	131981256	         9.084 ns/op
+BenchmarkFindChild/n=8/rep=hybrid8-8        	130147622	         9.106 ns/op
+BenchmarkFindChild/n=8/rep=hybrid8-8        	132562677	         9.113 ns/op
+BenchmarkFindChild/n=16/rep=linear-8        	93701970	        12.71 ns/op
+BenchmarkFindChild/n=16/rep=linear-8        	92901900	        12.81 ns/op
+BenchmarkFindChild/n=16/rep=linear-8        	96102644	        12.76 ns/op
+BenchmarkFindChild/n=16/rep=linear-8        	89047227	        12.80 ns/op
+BenchmarkFindChild/n=16/rep=linear-8        	96245440	        12.76 ns/op
+BenchmarkFindChild/n=16/rep=linear-8        	94603880	        12.70 ns/op
+BenchmarkFindChild/n=16/rep=linear-8        	93079066	        12.94 ns/op
+BenchmarkFindChild/n=16/rep=linear-8        	88424613	        12.85 ns/op
+BenchmarkFindChild/n=16/rep=linear-8        	94728919	        12.76 ns/op
+BenchmarkFindChild/n=16/rep=linear-8        	93896668	        12.77 ns/op
+BenchmarkFindChild/n=16/rep=map-8           	72876447	        16.50 ns/op
+BenchmarkFindChild/n=16/rep=map-8           	71898043	        16.05 ns/op
+BenchmarkFindChild/n=16/rep=map-8           	74862384	        15.86 ns/op
+BenchmarkFindChild/n=16/rep=map-8           	75463453	        15.87 ns/op
+BenchmarkFindChild/n=16/rep=map-8           	73853461	        16.38 ns/op
+BenchmarkFindChild/n=16/rep=map-8           	72773613	        15.96 ns/op
+BenchmarkFindChild/n=16/rep=map-8           	75239420	        16.42 ns/op
+BenchmarkFindChild/n=16/rep=map-8           	73565512	        15.81 ns/op
+BenchmarkFindChild/n=16/rep=map-8           	73557964	        16.18 ns/op
+BenchmarkFindChild/n=16/rep=map-8           	73895397	        16.35 ns/op
+BenchmarkFindChild/n=16/rep=hybrid8-8       	69956809	        17.05 ns/op
+BenchmarkFindChild/n=16/rep=hybrid8-8       	69901518	        16.89 ns/op
+BenchmarkFindChild/n=16/rep=hybrid8-8       	70624573	        16.86 ns/op
+BenchmarkFindChild/n=16/rep=hybrid8-8       	71754271	        17.00 ns/op
+BenchmarkFindChild/n=16/rep=hybrid8-8       	70501315	        16.95 ns/op
+BenchmarkFindChild/n=16/rep=hybrid8-8       	70142253	        16.91 ns/op
+BenchmarkFindChild/n=16/rep=hybrid8-8       	71244826	        16.80 ns/op
+BenchmarkFindChild/n=16/rep=hybrid8-8       	68972619	        17.18 ns/op
+BenchmarkFindChild/n=16/rep=hybrid8-8       	71049181	        17.10 ns/op
+BenchmarkFindChild/n=16/rep=hybrid8-8       	70335445	        16.98 ns/op
+BenchmarkFindChild/n=32/rep=linear-8        	34412158	        34.72 ns/op
+BenchmarkFindChild/n=32/rep=linear-8        	33891567	        34.54 ns/op
+BenchmarkFindChild/n=32/rep=linear-8        	34689260	        34.71 ns/op
+BenchmarkFindChild/n=32/rep=linear-8        	34131160	        34.47 ns/op
+BenchmarkFindChild/n=32/rep=linear-8        	34694946	        34.45 ns/op
+BenchmarkFindChild/n=32/rep=linear-8        	34599319	        34.65 ns/op
+BenchmarkFindChild/n=32/rep=linear-8        	31956118	        34.51 ns/op
+BenchmarkFindChild/n=32/rep=linear-8        	34369771	        34.41 ns/op
+BenchmarkFindChild/n=32/rep=linear-8        	34269991	        34.46 ns/op
+BenchmarkFindChild/n=32/rep=linear-8        	34365790	        34.41 ns/op
+BenchmarkFindChild/n=32/rep=map-8           	84985576	        13.81 ns/op
+BenchmarkFindChild/n=32/rep=map-8           	88448773	        13.07 ns/op
+BenchmarkFindChild/n=32/rep=map-8           	100000000	        15.77 ns/op
+BenchmarkFindChild/n=32/rep=map-8           	79135449	        14.27 ns/op
+BenchmarkFindChild/n=32/rep=map-8           	90786247	        15.40 ns/op
+BenchmarkFindChild/n=32/rep=map-8           	91207380	        15.35 ns/op
+BenchmarkFindChild/n=32/rep=map-8           	91122870	        15.41 ns/op
+BenchmarkFindChild/n=32/rep=map-8           	92400127	        15.37 ns/op
+BenchmarkFindChild/n=32/rep=map-8           	97501951	        14.15 ns/op
+BenchmarkFindChild/n=32/rep=map-8           	81345828	        18.86 ns/op
+BenchmarkFindChild/n=32/rep=hybrid8-8       	76978446	        15.24 ns/op
+BenchmarkFindChild/n=32/rep=hybrid8-8       	77659814	        14.99 ns/op
+BenchmarkFindChild/n=32/rep=hybrid8-8       	81417958	        15.07 ns/op
+BenchmarkFindChild/n=32/rep=hybrid8-8       	78487586	        15.20 ns/op
+BenchmarkFindChild/n=32/rep=hybrid8-8       	78281439	        15.49 ns/op
+BenchmarkFindChild/n=32/rep=hybrid8-8       	80737492	        15.53 ns/op
+BenchmarkFindChild/n=32/rep=hybrid8-8       	79541558	        13.68 ns/op
+BenchmarkFindChild/n=32/rep=hybrid8-8       	74806554	        16.73 ns/op
+BenchmarkFindChild/n=32/rep=hybrid8-8       	83224718	        14.65 ns/op
+BenchmarkFindChild/n=32/rep=hybrid8-8       	82969098	        19.44 ns/op
+BenchmarkRegister-8                         	      20	  53409296 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 695527
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+	... [output truncated]
+BenchmarkRegister-8                         	      21	  53497842 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 695527
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+	... [output truncated]
+BenchmarkRegister-8                         	      21	  53321018 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 695527
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+	... [output truncated]
+BenchmarkRegister-8                         	      21	  53334798 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 695527
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+	... [output truncated]
+BenchmarkRegister-8                         	      21	  53010686 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 695527
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+	... [output truncated]
+BenchmarkRegister-8                         	      21	  53237498 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 695527
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+	... [output truncated]
+BenchmarkRegister-8                         	      21	  53511193 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 695527
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+	... [output truncated]
+BenchmarkRegister-8                         	      22	  52960032 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 695527
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+	... [output truncated]
+BenchmarkRegister-8                         	      21	  53294740 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 695527
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+	... [output truncated]
+BenchmarkRegister-8                         	      21	  52975188 ns/op
+--- BENCH: BenchmarkRegister-8
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 695527
+    server_test.go:145: benchmarking with 5200 patterns
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+    server_test.go:160: conflict calls: 695527
+	... [output truncated]
+BenchmarkServeHTTP/http-8                   	   46954	     25173 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServeHTTP/http-8                   	   46856	     25240 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServeHTTP/http-8                   	   47216	     25866 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServeHTTP/http-8                   	   47860	     25297 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServeHTTP/http-8                   	   47520	     25354 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServeHTTP/http-8                   	   41818	     34726 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServeHTTP/http-8                   	   36816	     27929 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServeHTTP/http-8                   	   47119	     25124 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServeHTTP/http-8                   	   46381	     25546 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServeHTTP/http-8                   	   46785	     25382 ns/op	       0 B/op	       0 allocs/op
+BenchmarkServeHTTP/muxpatterns-8            	   48876	     24292 ns/op	      16 B/op	       1 allocs/op
+BenchmarkServeHTTP/muxpatterns-8            	   50162	     23849 ns/op	      16 B/op	       1 allocs/op
+BenchmarkServeHTTP/muxpatterns-8            	   48921	     24504 ns/op	      16 B/op	       1 allocs/op
+BenchmarkServeHTTP/muxpatterns-8            	   49813	     24286 ns/op	      16 B/op	       1 allocs/op
+BenchmarkServeHTTP/muxpatterns-8            	   49244	     24459 ns/op	      16 B/op	       1 allocs/op
+BenchmarkServeHTTP/muxpatterns-8            	   49332	     24048 ns/op	      16 B/op	       1 allocs/op
+BenchmarkServeHTTP/muxpatterns-8            	   49657	     24025 ns/op	      16 B/op	       1 allocs/op
+BenchmarkServeHTTP/muxpatterns-8            	   48574	     23988 ns/op	      16 B/op	       1 allocs/op
+BenchmarkServeHTTP/muxpatterns-8            	   47678	     23656 ns/op	      16 B/op	       1 allocs/op
+BenchmarkServeHTTP/muxpatterns-8            	   47994	     24961 ns/op	      16 B/op	       1 allocs/op
+PASS
+ok  	github.com/jba/muxpatterns	261.664s
