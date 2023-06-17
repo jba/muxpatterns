@@ -130,7 +130,7 @@ func (mux *ServeMux) handler(r *http.Request) (h http.Handler, pattern *Pattern,
 		// If r.URL.Path is /tree and its handler is not registered,
 		// the /tree -> /tree/ redirect applies to CONNECT requests
 		// but the path canonicalization does not.
-		n, matches, u, redirect = mux.matchOrRedirect(r.Method, r.URL.Host, r.URL.Path, r.URL)
+		_, _, u, redirect = mux.matchOrRedirect(r.Method, r.URL.Host, r.URL.Path, r.URL)
 		if redirect {
 			return http.RedirectHandler(u.String(), http.StatusMovedPermanently), nil, u.Path, nil
 		}

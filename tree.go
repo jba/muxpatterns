@@ -157,25 +157,3 @@ func (n *node) matchPath(path string, matches []string) (*node, []string) {
 	}
 	return nil, nil
 }
-
-func (n *node) patterns(f func(*Pattern, http.Handler) error) error {
-	if n == nil {
-		return nil
-	}
-	if n.pattern != nil {
-		if err := f(n.pattern, n.handler); err != nil {
-			return err
-		}
-	}
-	if n.emptyChild != nil {
-		if err := n.emptyChild.patterns(f); err != nil {
-			return err
-		}
-	}
-	return n.children.pairs(func(_ string, n *node) error {
-		if err := n.patterns(f); err != nil {
-			return err
-		}
-		return nil
-	})
-}
