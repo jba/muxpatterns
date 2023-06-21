@@ -156,6 +156,35 @@ func TestPathValue(t *testing.T) {
 	}
 }
 
+func TestEscapedPath(t *testing.T) {
+	newMux := NewServeMux()
+	newMux.Handle("/a/b/c", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	newServer := httptest.NewServer(newMux)
+	defer newServer.Close()
+
+	oldMux := http.NewServeMux()
+	oldMux.Handle("/a%2Fb/c", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	oldServer := httptest.NewServer(oldMux)
+	defer oldServer.Close()
+
+	for _, test := range []string{
+		"/a/b/c",
+		"/a%2Fb/c",
+	} {
+		newRes, err := http.Get(newServer.URL + test)
+		if err != nil {
+			t.Fatal(err)
+		}
+		oldRes, err := http.Get(oldServer.URL + test)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if newRes.StatusCode != 200 || oldRes.StatusCode != 200 {
+			t.Errorf("got code %d, old %d, want 200", newRes.StatusCode, oldRes.StatusCode)
+		}
+	}
+}
+
 func BenchmarkRegister(b *testing.B) {
 	f, err := os.Open(filepath.Join("testdata", "patterns.txt"))
 	if err != nil {
