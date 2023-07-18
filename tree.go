@@ -9,6 +9,7 @@ package muxpatterns
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -138,7 +139,7 @@ func (n *node) matchPath(path string, matches []string) (*node, []string) {
 	}
 	// Match single wildcard, but not on a trailing slash.
 	if c := n.emptyChild; seg != "/" && c != nil {
-		if n, m := c.matchPath(rest, append(matches, seg)); n != nil {
+		if n, m := c.matchPath(rest, append(matches, matchValue(seg))); n != nil {
 			return n, m
 		}
 	}
@@ -147,7 +148,7 @@ func (n *node) matchPath(path string, matches []string) (*node, []string) {
 		// Don't record a match for a nameless wildcard (which arises from a
 		// trailing slash in the pattern).
 		if c.pattern.lastSegment().s != "" {
-			matches = append(matches, path[1:]) // remove initial slash
+			matches = append(matches, matchValue(path[1:])) // remove initial slash
 		}
 		return c, matches
 	}
@@ -166,4 +167,13 @@ func nextSegment(path string) (seg, rest string) {
 		return path, ""
 	}
 	return path[:i], path[i:]
+}
+
+func matchValue(path string) string {
+	m, err := url.PathUnescape(path)
+	if err != nil {
+		// Path is not properly escaped, so use the original.
+		return path
+	}
+	return m
 }

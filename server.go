@@ -125,23 +125,24 @@ func (mux *ServeMux) handler(r *http.Request) (h http.Handler, pattern *Pattern,
 		u        *url.URL
 		redirect bool
 	)
+	escapedPath := r.URL.EscapedPath()
 	// CONNECT requests are not canonicalized.
 	if r.Method == "CONNECT" {
 		// If r.URL.Path is /tree and its handler is not registered,
 		// the /tree -> /tree/ redirect applies to CONNECT requests
 		// but the path canonicalization does not.
-		_, _, u, redirect = mux.matchOrRedirect(r.Method, r.URL.Host, r.URL.Path, r.URL)
+		_, _, u, redirect = mux.matchOrRedirect(r.Method, r.URL.Host, escapedPath, r.URL)
 		if redirect {
 			return http.RedirectHandler(u.String(), http.StatusMovedPermanently), nil, u.Path, nil
 		}
 		// Redo the match, this time with r.Host instead of r.URL.Host.
 		// Pass a nil URL to skip the trailing-slash redirect logic.
-		n, matches, _, _ = mux.matchOrRedirect(r.Method, r.Host, r.URL.Path, nil)
+		n, matches, _, _ = mux.matchOrRedirect(r.Method, r.Host, escapedPath, nil)
 	} else {
 		// All other requests have any port stripped and path cleaned
 		// before passing to mux.handler.
 		host := stripHostPort(r.Host)
-		path := cleanPath(r.URL.Path)
+		path := cleanPath(escapedPath)
 
 		// If the given path is /tree and its handler is not registered,
 		// redirect for /tree/.
@@ -149,7 +150,7 @@ func (mux *ServeMux) handler(r *http.Request) (h http.Handler, pattern *Pattern,
 		if redirect {
 			return http.RedirectHandler(u.String(), http.StatusMovedPermanently), nil, u.Path, nil
 		}
-		if path != r.URL.Path {
+		if path != escapedPath {
 			// Redirect to cleaned path.
 			pattern := ""
 			if n != nil {
@@ -226,7 +227,6 @@ func (mux *ServeMux) matchOrRedirect(method, host, path string, u *url.URL) (*no
 	// If we have an exact match, then don't redirect.
 	if !exactMatch(n, path) && u != nil {
 		// If there is an exact match with a trailing slash, then redirect.
-
 		path += "/"
 		n2, _ := mux.tree.match(method, host, path)
 		if exactMatch(n2, path) {

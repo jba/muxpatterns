@@ -125,7 +125,7 @@ func TestPathValue(t *testing.T) {
 			"/names/{name}/{other...}",
 			"/names/" + url.PathEscape("/john") + "/address",
 			map[string]string{
-				"name":  "john",
+				"name":  "/john",
 				"other": "address",
 			},
 		},
@@ -133,8 +133,8 @@ func TestPathValue(t *testing.T) {
 			"/names/{name}/{other...}",
 			"/names/" + url.PathEscape("john/doe") + "/address",
 			map[string]string{
-				"name":  "john",
-				"other": "doe/address",
+				"name":  "john/doe",
+				"other": "address",
 			},
 		},
 	} {
@@ -157,31 +157,44 @@ func TestPathValue(t *testing.T) {
 }
 
 func TestEscapedPath(t *testing.T) {
-	t.Skip("awaiting work on escaped paths")
-	newMux := NewServeMux()
-	newMux.Handle("/a/b/c", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	newServer := httptest.NewServer(newMux)
-	defer newServer.Close()
+	mux := NewServeMux()
+	var gotPattern, gotMatch string
+	pat1 := "/a/b/c"
+	mux.Handle(pat1, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPattern = pat1
+		gotMatch = ""
+	}))
+	pat2 := "/{x}/c"
+	mux.Handle(pat2, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPattern = pat2
+		gotMatch = mux.PathValue(r, "x")
+	}))
 
-	oldMux := http.NewServeMux()
-	oldMux.Handle("/a%2Fb/c", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	oldServer := httptest.NewServer(oldMux)
-	defer oldServer.Close()
+	server := httptest.NewServer(mux)
+	defer server.Close()
 
-	for _, test := range []string{
-		"/a/b/c",
-		"/a%2Fb/c",
+	for _, test := range []struct {
+		path        string
+		wantPattern string
+		wantMatch   string
+	}{
+		{"/a/b/c", pat1, ""},
+		{"/a%2Fb/c", pat2, "a/b"},
 	} {
-		newRes, err := http.Get(newServer.URL + test)
+		gotPattern = ""
+		gotMatch = ""
+		res, err := http.Get(server.URL + test.path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		oldRes, err := http.Get(oldServer.URL + test)
-		if err != nil {
-			t.Fatal(err)
+		if res.StatusCode != 200 {
+			t.Errorf("got code %d, want 200", res.StatusCode)
 		}
-		if newRes.StatusCode != 200 || oldRes.StatusCode != 200 {
-			t.Errorf("got code %d, old %d, want 200", newRes.StatusCode, oldRes.StatusCode)
+		if g, w := gotPattern, test.wantPattern; g != w {
+			t.Errorf("pattern: got %q, want %q", g, w)
+		}
+		if g, w := gotMatch, test.wantMatch; g != w {
+			t.Errorf("match: got %q, want %q", g, w)
 		}
 	}
 }
