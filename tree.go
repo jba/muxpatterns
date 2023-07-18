@@ -22,25 +22,11 @@ type node struct {
 
 	// An interior node maps parts of the incoming request to child nodes.
 	// special children keys:
-	//     "/"	trailing slash
+	//     "/"	trailing slash (resulting from {$})
 	//	   ""   single wildcard
 	//	   "*"  multi wildcard
 	children   mapping[string, *node]
 	emptyChild *node // optimization: child with key ""
-}
-
-// returns segment, "/" for trailing slash, or "" for done.
-// path should start with a "/"
-func nextSegment(path string) (seg, rest string) {
-	if path == "/" {
-		return "/", ""
-	}
-	path = path[1:] // drop initial slash
-	i := strings.IndexByte(path, '/')
-	if i < 0 {
-		return path, ""
-	}
-	return path[:i], path[i:]
 }
 
 func (root *node) addPattern(p *Pattern, h http.Handler) {
@@ -104,6 +90,9 @@ func (n *node) findChild(key string) *node {
 
 func (root *node) match(method, host, path string) (*node, []string) {
 	if host != "" {
+		// There is a host. If there is a pattern that specifies that host and it
+		// matches, we are done. If the pattern doesn't match, fall through to
+		// try patterns with no host.
 		if c := root.findChild(host); c != nil {
 			if p, m := c.matchMethodAndPath(method, path); p != nil {
 				return p, m
@@ -120,6 +109,7 @@ func (n *node) matchMethodAndPath(method, path string) (*node, []string) {
 	if method == "" {
 		panic("empty method")
 	}
+
 	if c := n.findChild(method); c != nil {
 		if p, m := c.matchPath(path, nil); p != nil {
 			return p, m
@@ -140,24 +130,40 @@ func (n *node) matchPath(path string, matches []string) (*node, []string) {
 		return n, matches
 	}
 	seg, rest := nextSegment(path)
+	// Match literal.
 	if c := n.findChild(seg); c != nil {
 		if n, m := c.matchPath(rest, matches); n != nil {
 			return n, m
 		}
 	}
-	// Match single wildcard.
-	if c := n.emptyChild; c != nil {
+	// Match single wildcard, but not on a trailing slash.
+	if c := n.emptyChild; seg != "/" && c != nil {
 		if n, m := c.matchPath(rest, append(matches, seg)); n != nil {
 			return n, m
 		}
 	}
 	// Match multi wildcard to the rest of the pattern.
 	if c := n.findChild("*"); c != nil {
-		// Don't record a match for a nameless wildcard (which arises from a trailing slash).
+		// Don't record a match for a nameless wildcard (which arises from a
+		// trailing slash in the pattern).
 		if c.pattern.lastSegment().s != "" {
 			matches = append(matches, path[1:]) // remove initial slash
 		}
 		return c, matches
 	}
 	return nil, nil
+}
+
+// returns segment, "/" for trailing slash, or "" for done.
+// path should start with a "/"
+func nextSegment(path string) (seg, rest string) {
+	if path == "/" {
+		return "/", ""
+	}
+	path = path[1:] // drop initial slash
+	i := strings.IndexByte(path, '/')
+	if i < 0 {
+		return path, ""
+	}
+	return path[:i], path[i:]
 }

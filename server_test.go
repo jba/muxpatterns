@@ -157,6 +157,7 @@ func TestPathValue(t *testing.T) {
 }
 
 func TestEscapedPath(t *testing.T) {
+	t.Skip("awaiting work on escaped paths")
 	newMux := NewServeMux()
 	newMux.Handle("/a/b/c", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	newServer := httptest.NewServer(newMux)

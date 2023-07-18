@@ -58,7 +58,7 @@ func (h *mapping[K, V]) find(k K) (v V, found bool) {
 }
 
 // pairs calls f for every pair in the mapping.
-// If f, returns a non-nil error, pairs returns immediately with the same error.
+// If f returns a non-nil error, pairs returns immediately with the same error.
 func (h *mapping[K, V]) pairs(f func(k K, v V) error) error {
 	if h == nil {
 		return nil
