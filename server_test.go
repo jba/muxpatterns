@@ -199,6 +199,33 @@ func TestEscapedPath(t *testing.T) {
 	}
 }
 
+func TestStatus(t *testing.T) {
+	mux := NewServeMux()
+	mux.Handle("GET /g", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	mux.Handle("POST /p", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	for _, test := range []struct {
+		path string
+		// method is always GET
+		want int
+	}{
+		{"/g", 200},
+		{"/x", 404},
+		{"/p", 405}, // path matches a different method
+		{"/./p", 405},
+	} {
+		res, err := http.Get(server.URL + test.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if g, w := res.StatusCode, test.want; g != w {
+			t.Errorf("got %d, want %d", g, w)
+		}
+	}
+}
+
 func BenchmarkRegister(b *testing.B) {
 	f, err := os.Open(filepath.Join("testdata", "patterns.txt"))
 	if err != nil {

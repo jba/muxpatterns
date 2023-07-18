@@ -124,25 +124,29 @@ func (mux *ServeMux) handler(r *http.Request) (h http.Handler, pattern *Pattern,
 		n        *node
 		u        *url.URL
 		redirect bool
+		host     string
+		path     string
 	)
+	host = r.URL.Host
 	escapedPath := r.URL.EscapedPath()
+	path = escapedPath
 	// CONNECT requests are not canonicalized.
 	if r.Method == "CONNECT" {
 		// If r.URL.Path is /tree and its handler is not registered,
 		// the /tree -> /tree/ redirect applies to CONNECT requests
 		// but the path canonicalization does not.
-		_, _, u, redirect = mux.matchOrRedirect(r.Method, r.URL.Host, escapedPath, r.URL)
+		_, _, u, redirect = mux.matchOrRedirect(r.Method, host, path, r.URL)
 		if redirect {
 			return http.RedirectHandler(u.String(), http.StatusMovedPermanently), nil, u.Path, nil
 		}
 		// Redo the match, this time with r.Host instead of r.URL.Host.
 		// Pass a nil URL to skip the trailing-slash redirect logic.
-		n, matches, _, _ = mux.matchOrRedirect(r.Method, r.Host, escapedPath, nil)
+		n, matches, _, _ = mux.matchOrRedirect(r.Method, r.Host, path, nil)
 	} else {
 		// All other requests have any port stripped and path cleaned
 		// before passing to mux.handler.
-		host := stripHostPort(r.Host)
-		path := cleanPath(escapedPath)
+		host = stripHostPort(r.Host)
+		path = cleanPath(path)
 
 		// If the given path is /tree and its handler is not registered,
 		// redirect for /tree/.
@@ -161,6 +165,14 @@ func (mux *ServeMux) handler(r *http.Request) (h http.Handler, pattern *Pattern,
 		}
 	}
 	if n == nil {
+		// We didn't find a match with the request method. To distinguish between
+		// Not Found and Method Not Allowed, see if there is another pattern that
+		// matches except for the method.
+		if m, _, _, _ := mux.matchOrRedirect("", host, path, r.URL); m != nil {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+			}), nil, "", nil
+		}
 		return http.NotFoundHandler(), nil, "", nil
 	}
 	return n.handler, n.pattern, n.pattern.String(), matches

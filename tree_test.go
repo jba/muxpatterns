@@ -117,17 +117,17 @@ func TestNodeMatch(t *testing.T) {
 		}
 	}
 
-	// test(getTestTree(), []testCase{
-	// 	{"GET", "", "/a", "/a", nil},
-	// 	{"Get", "", "/b", "", nil},
-	// 	{"Get", "", "/a/b", "/a/b", nil},
-	// 	{"Get", "", "/a/c", "/a/{x}", []string{"c"}},
-	// 	{"Get", "", "/a/b/", "/a/b/{$}", nil},
-	// 	{"Get", "", "/a/b/c", "/a/b/{y}", []string{"c"}},
-	// 	{"Get", "", "/a/b/c/d", "/a/b/{x...}", []string{"c/d"}},
-	// 	{"Get", "", "/g/h/i", "/g/h/i", nil},
-	// 	{"Get", "", "/g/h/j", "/g/{x}/j", []string{"h"}},
-	// })
+	test(getTestTree(), []testCase{
+		{"GET", "", "/a", "/a", nil},
+		{"Get", "", "/b", "", nil},
+		{"Get", "", "/a/b", "/a/b", nil},
+		{"Get", "", "/a/c", "/a/{x}", []string{"c"}},
+		{"Get", "", "/a/b/", "/a/b/{$}", nil},
+		{"Get", "", "/a/b/c", "/a/b/{y}", []string{"c"}},
+		{"Get", "", "/a/b/c/d", "/a/b/{x...}", []string{"c/d"}},
+		{"Get", "", "/g/h/i", "/g/h/i", nil},
+		{"Get", "", "/g/h/j", "/g/{x}/j", []string{"h"}},
+	})
 
 	tree := buildTree(
 		"/item/",
@@ -195,9 +195,13 @@ func TestNodeMatch(t *testing.T) {
 		{"GET", "", "/a/b/c/d", pat3, []string{"c/d"}},
 	})
 
+	// Matching any method is used for detecting 405.
+	test(buildTree("POST /a", "HEAD /b"), []testCase{
+		{"", "", "/b",
+			"HEAD /b", nil},
+	})
 }
 
-// Modifies n; use for testing only.
 func (n *node) print(w io.Writer, level int) {
 	indent := strings.Repeat("    ", level)
 	if n.pattern != nil {
@@ -209,9 +213,9 @@ func (n *node) print(w io.Writer, level int) {
 	}
 
 	var keys []string
-	n.children.pairs(func(k string, _ *node) error {
+	n.children.pairs(func(k string, _ *node) bool {
 		keys = append(keys, k)
-		return nil
+		return true
 	})
 	sort.Strings(keys)
 

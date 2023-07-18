@@ -94,35 +94,41 @@ func (root *node) match(method, host, path string) (*node, []string) {
 		// There is a host. If there is a pattern that specifies that host and it
 		// matches, we are done. If the pattern doesn't match, fall through to
 		// try patterns with no host.
-		if c := root.findChild(host); c != nil {
-			if p, m := c.matchMethodAndPath(method, path); p != nil {
-				return p, m
-			}
-		}
-	}
-	if c := root.emptyChild; c != nil {
-		return c.matchMethodAndPath(method, path)
-	}
-	return nil, nil
-}
-
-func (n *node) matchMethodAndPath(method, path string) (*node, []string) {
-	if method == "" {
-		panic("empty method")
-	}
-
-	if c := n.findChild(method); c != nil {
-		if p, m := c.matchPath(path, nil); p != nil {
+		if p, m := root.findChild(host).matchMethodAndPath(method, path); p != nil {
 			return p, m
 		}
 	}
-	if c := n.emptyChild; c != nil {
-		return c.matchPath(path, nil)
+	return root.emptyChild.matchMethodAndPath(method, path)
+}
+
+func (n *node) matchMethodAndPath(method, path string) (*node, []string) {
+	if n == nil {
+		return nil, nil
 	}
-	return nil, nil
+	if method == "" {
+		// Match any method. Should happen only when a regular match fails and
+		// we are deciding between returning 404 and 405.
+		var p *node
+		var m []string
+		n.children.pairs(func(_ string, c *node) bool {
+			if p, m = c.matchPath(path, nil); p != nil {
+				return false
+			}
+			return true
+		})
+		if p != nil {
+			return p, m
+		}
+	} else if p, m := n.findChild(method).matchPath(path, nil); p != nil {
+		return p, m
+	}
+	return n.emptyChild.matchPath(path, nil)
 }
 
 func (n *node) matchPath(path string, matches []string) (*node, []string) {
+	if n == nil {
+		return nil, nil
+	}
 	// If path is empty, then return the node, whose pattern may be nil.
 	if path == "" {
 		if n.pattern == nil {
@@ -132,14 +138,12 @@ func (n *node) matchPath(path string, matches []string) (*node, []string) {
 	}
 	seg, rest := nextSegment(path)
 	// Match literal.
-	if c := n.findChild(seg); c != nil {
-		if n, m := c.matchPath(rest, matches); n != nil {
-			return n, m
-		}
+	if n, m := n.findChild(seg).matchPath(rest, matches); n != nil {
+		return n, m
 	}
 	// Match single wildcard, but not on a trailing slash.
-	if c := n.emptyChild; seg != "/" && c != nil {
-		if n, m := c.matchPath(rest, append(matches, matchValue(seg))); n != nil {
+	if seg != "/" {
+		if n, m := n.emptyChild.matchPath(rest, append(matches, matchValue(seg))); n != nil {
 			return n, m
 		}
 	}

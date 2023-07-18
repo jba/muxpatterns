@@ -58,23 +58,22 @@ func (h *mapping[K, V]) find(k K) (v V, found bool) {
 }
 
 // pairs calls f for every pair in the mapping.
-// If f returns a non-nil error, pairs returns immediately with the same error.
-func (h *mapping[K, V]) pairs(f func(k K, v V) error) error {
+// If f returns false, pairs returns immediately.
+func (h *mapping[K, V]) pairs(f func(k K, v V) bool) {
 	if h == nil {
-		return nil
+		return
 	}
 	if h.m != nil {
 		for k, v := range h.m {
-			if err := f(k, v); err != nil {
-				return err
+			if !f(k, v) {
+				return
 			}
 		}
 	} else {
 		for _, e := range h.s {
-			if err := f(e.key, e.value); err != nil {
-				return err
+			if !f(e.key, e.value) {
+				return
 			}
 		}
 	}
-	return nil
 }
