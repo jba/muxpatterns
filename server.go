@@ -268,6 +268,8 @@ func exactMatch(n *node, path string) bool {
 
 // PathValue returns the value for the named path wildcard in the
 // pattern that matched the request.
+// If there is no matched wildcard with the name, PathValue returns
+// the empty string.
 //
 // This is a method on ServeMux only for demo purposes.
 // In the actual implementation, it will be a method on Request.
@@ -275,9 +277,27 @@ func (mux *ServeMux) PathValue(r *http.Request, name string) string {
 	mux.mu.RLock()
 	defer mux.mu.RUnlock()
 	if m, ok := mux.matches[r]; ok {
-		return m.lookup(name)
+		if i := m.lookup(name); i >= 0 {
+			return m.values[i]
+		}
 	}
 	return ""
+}
+
+// SetPathValue sets the value for path element name in r.
+// If there is no matched wildcard with the name, SetPathValue
+// does nothing.
+//
+// This is a method on ServeMux only for demo purposes.
+// In the actual implementation, it will be a method on Request.
+func (mux *ServeMux) SetPathValue(r *http.Request, name, value string) {
+	mux.mu.Lock()
+	defer mux.mu.Unlock()
+	if m, ok := mux.matches[r]; ok {
+		if i := m.lookup(name); i >= 0 {
+			m.values[i] = value
+		}
+	}
 }
 
 type match struct {
@@ -285,15 +305,15 @@ type match struct {
 	values []string
 }
 
-func (m match) lookup(name string) string {
+func (m match) lookup(name string) int {
 	i := 0
 	for _, seg := range m.pat.segments {
 		if seg.wild && seg.s != "" {
 			if name == seg.s {
-				return m.values[i]
+				return i
 			}
 			i++
 		}
 	}
-	return ""
+	return -1
 }

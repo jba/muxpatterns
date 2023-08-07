@@ -156,6 +156,28 @@ func TestPathValue(t *testing.T) {
 	}
 }
 
+func TestSetPathValue(t *testing.T) {
+	mux := NewServeMux()
+	mux.Handle("/a/{b}/c/{d...}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mux.SetPathValue(r, "b", "X")
+		mux.SetPathValue(r, "d", "Y")
+		mux.SetPathValue(r, "a", "ignored")
+
+		if g, w := mux.PathValue(r, "b"), "X"; g != w {
+			t.Errorf("got %q, want %q", g, w)
+		}
+		if g, w := mux.PathValue(r, "d"), "Y"; g != w {
+			t.Errorf("got %q, want %q", g, w)
+		}
+	}))
+	server := httptest.NewServer(mux)
+	defer server.Close()
+	_, err := http.Get(server.URL + "/a/b/c/d/e")
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestEscapedPath(t *testing.T) {
 	mux := NewServeMux()
 	var gotPattern, gotMatch string
