@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 )
 
@@ -207,12 +208,65 @@ func TestNodeMatch(t *testing.T) {
 		{"GET", "", "/a/b/c", pat2, []string{"c"}},
 		{"GET", "", "/a/b/c/d", pat3, []string{"c/d"}},
 	})
+}
 
-	// Matching any method is used for detecting 405.
-	test(buildTree("POST /a", "HEAD /b"), []testCase{
-		{"", "", "/b",
-			"HEAD /b", nil},
-	})
+func TestMatchingMethods(t *testing.T) {
+	hostTree := buildTree("GET a.com/", "PUT b.com/", "POST /foo/{x}")
+	for _, test := range []struct {
+		name       string
+		tree       *node
+		host, path string
+		want       string
+	}{
+		{
+			"post",
+			buildTree("POST /"), "", "/foo",
+			"POST",
+		},
+		{
+			"get",
+			buildTree("GET /"), "", "/foo",
+			"GET,HEAD",
+		},
+		{
+			"host",
+			hostTree, "", "/foo",
+			"",
+		},
+		{
+			"host",
+			hostTree, "", "/foo/bar",
+			"POST",
+		},
+		{
+			"host2",
+			hostTree, "a.com", "/foo/bar",
+			"GET,HEAD,POST",
+		},
+		{
+			"host3",
+			hostTree, "b.com", "/bar",
+			"PUT",
+		},
+		{
+			// This case shouldn't come up because we only call matchingMethods
+			// when there was no match, but we include it for completeness.
+			"empty",
+			buildTree("/"), "", "/",
+			"",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ms := map[string]bool{}
+			test.tree.matchingMethods(test.host, test.path, ms)
+			keys := maps.Keys(ms)
+			sort.Strings(keys)
+			got := strings.Join(keys, ",")
+			if got != test.want {
+				t.Errorf("got %s, want %s", got, test.want)
+			}
+		})
+	}
 }
 
 func (n *node) print(w io.Writer, level int) {

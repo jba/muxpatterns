@@ -227,28 +227,47 @@ func TestEscapedPath(t *testing.T) {
 }
 
 func TestStatus(t *testing.T) {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
 	mux := NewServeMux()
-	mux.Handle("GET /g", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	mux.Handle("POST /p", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	mux.Handle("GET /g", h)
+	mux.Handle("POST /p", h)
+	mux.Handle("PATCH /p", h)
+	mux.Handle("PUT /r", h)
+	mux.Handle("GET /r/", h)
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
 	for _, test := range []struct {
-		path string
-		// method is always GET
-		want int
+		method, path string
+		wantStatus   int
+		wantAllow    string
 	}{
-		{"/g", 200},
-		{"/x", 404},
-		{"/p", 405}, // path matches a different method
-		{"/./p", 405},
+		{"GET", "/g", 200, ""},
+		{"HEAD", "/g", 200, ""},
+		{"POST", "/g", 405, "GET, HEAD"},
+		{"GET", "/x", 404, ""},
+		{"GET", "/p", 405, "PATCH, POST"},
+		{"GET", "/./p", 405, "PATCH, POST"},
+		{"GET", "/r/", 200, ""},
+		{"GET", "/r", 200, ""}, // redirected
+		{"HEAD", "/r/", 200, ""},
+		{"HEAD", "/r", 200, ""}, // redirected
+		{"PUT", "/r/", 405, "GET, HEAD"},
+		{"PUT", "/r", 200, ""},
 	} {
-		res, err := http.Get(server.URL + test.path)
+		req, err := http.NewRequest(test.method, server.URL+test.path, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if g, w := res.StatusCode, test.want; g != w {
-			t.Errorf("got %d, want %d", g, w)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if g, w := res.StatusCode, test.wantStatus; g != w {
+			t.Errorf("%s %s: got %d, want %d", test.method, test.path, g, w)
+		}
+		if g, w := res.Header.Get("Allow"), test.wantAllow; g != w {
+			t.Errorf("%s %s, Allow: got %q, want %q", test.method, test.path, g, w)
 		}
 	}
 }

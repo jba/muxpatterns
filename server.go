@@ -15,9 +15,12 @@ import (
 	"net/url"
 	"path"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"golang.org/x/exp/maps"
 )
 
 // ServeMux is an HTTP request multiplexer.
@@ -168,8 +171,10 @@ func (mux *ServeMux) handler(r *http.Request) (h http.Handler, pattern *Pattern,
 		// We didn't find a match with the request method. To distinguish between
 		// Not Found and Method Not Allowed, see if there is another pattern that
 		// matches except for the method.
-		if m, _, _, _ := mux.matchOrRedirect("", host, path, r.URL); m != nil {
+		allowedMethods := mux.matchingMethods(host, path)
+		if len(allowedMethods) > 0 {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Allow", strings.Join(allowedMethods, ", "))
 				http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 			}), nil, "", nil
 		}
@@ -264,6 +269,21 @@ func exactMatch(n *node, path string) bool {
 	// segments should be the same as the number of slashes in the path.
 	// E.g. "/a/b/{$}" and "/a/b/{...}" exactly match "/a/b/", but "/a/" does not.
 	return len(n.pattern.segments) == strings.Count(path, "/")
+}
+
+// Return a sorted list of all methods that would match with the given host and path.
+func (mux *ServeMux) matchingMethods(host, path string) []string {
+	// Hold the read lock for the entire method so that the two matches are done
+	// on the same set of registered patterns.
+	mux.mu.RLock()
+	defer mux.mu.RUnlock()
+	ms := map[string]bool{}
+	mux.tree.matchingMethods(host, path, ms)
+	// matchOrRedirect will try appending a trailing slash if there is no match.
+	mux.tree.matchingMethods(host, path+"/", ms)
+	methods := maps.Keys(ms)
+	sort.Strings(methods)
+	return methods
 }
 
 // PathValue returns the value for the named path wildcard in the

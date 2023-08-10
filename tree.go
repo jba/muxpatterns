@@ -89,6 +89,11 @@ func (n *node) findChild(key string) *node {
 	return r
 }
 
+// If method is non-empty, match returns the leaf node that matches the
+// arguments, and a list of values for pattern wildcards in the order that the
+// wildcards appear.
+//
+// If method is empty, the
 func (root *node) match(method, host, path string) (*node, []string) {
 	if host != "" {
 		// There is a host. If there is a pattern that specifies that host and it
@@ -105,24 +110,11 @@ func (n *node) matchMethodAndPath(method, path string) (*node, []string) {
 	if n == nil {
 		return nil, nil
 	}
-	if method == "" {
-		// Match any method. Should happen only when a regular match fails and
-		// we are deciding between returning 404 and 405.
-		var p *node
-		var m []string
-		n.children.pairs(func(_ string, c *node) bool {
-			if p, m = c.matchPath(path, nil); p != nil {
-				return false
-			}
-			return true
-		})
-		if p != nil {
-			return p, m
-		}
-	} else if p, m := n.findChild(method).matchPath(path, nil); p != nil {
+	if p, m := n.findChild(method).matchPath(path, nil); p != nil {
 		// Exact match of method name.
 		return p, m
-	} else if method == "HEAD" {
+	}
+	if method == "HEAD" {
 		// GET matches HEAD too.
 		if p, m := n.findChild("GET").matchPath(path, nil); p != nil {
 			return p, m
@@ -163,6 +155,33 @@ func (n *node) matchPath(path string, matches []string) (*node, []string) {
 		return c, matches
 	}
 	return nil, nil
+}
+
+// matchingMethods returns a sorted list of all methods that, if passed to node.match
+// with the given host and path, would result in a match.
+func (root *node) matchingMethods(host, path string, methodSet map[string]bool) {
+	if host != "" {
+		root.findChild(host).matchingMethodsPath(path, methodSet)
+	}
+	root.emptyChild.matchingMethodsPath(path, methodSet)
+	if methodSet["GET"] {
+		methodSet["HEAD"] = true
+	}
+}
+
+func (n *node) matchingMethodsPath(path string, set map[string]bool) {
+	if n == nil {
+		return
+	}
+	n.children.pairs(func(method string, c *node) bool {
+		if p, _ := c.matchPath(path, nil); p != nil {
+			set[method] = true
+		}
+		return true
+	})
+	// Don't look at the empty child. If there were an empty
+	// child, it would match on any method, but we only
+	// call this when we fail to match on a method.
 }
 
 // returns segment, "/" for trailing slash, or "" for done.
