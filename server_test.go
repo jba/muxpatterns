@@ -22,18 +22,20 @@ func (handler) ServeHTTP(http.ResponseWriter, *http.Request) {}
 
 func TestServeMuxHandler(t *testing.T) {
 	mux := NewServeMux()
-	mux.Handle("/", &handler{1})
-	mux.Handle("/foo/", &handler{2})
-	mux.Handle("/foo", &handler{3})
-	mux.Handle("/bar/", &handler{4})
-	mux.Handle("//foo", &handler{5})
-
 	hmux := http.NewServeMux()
-	hmux.Handle("/", &handler{1})
-	hmux.Handle("/foo/", &handler{2})
-	hmux.Handle("/foo", &handler{3})
-	hmux.Handle("/bar/", &handler{4})
-	hmux.Handle("//foo", &handler{5})
+	for _, ph := range []struct {
+		pat string
+		h   http.Handler
+	}{
+		{"/", &handler{1}},
+		{"/foo/", &handler{2}},
+		{"/foo", &handler{3}},
+		{"/bar/", &handler{4}},
+		{"//foo", &handler{5}},
+	} {
+		mux.Handle(ph.pat, ph.h)
+		hmux.Handle(ph.pat, ph.h)
+	}
 
 	for _, test := range []struct {
 		method      string
