@@ -139,6 +139,34 @@ func (p1 *Pattern) equal(p2 *Pattern) bool {
 	return p1.method == p2.method && p1.host == p2.host && slices.Equal(p1.segments, p2.segments)
 }
 
+func TestCompareMethods(t *testing.T) {
+	for _, test := range []struct {
+		p1, p2 string
+		want   relationship
+	}{
+		{"/", "/", equivalent},
+		{"GET /", "GET /", equivalent},
+		{"HEAD /", "HEAD /", equivalent},
+		{"POST /", "POST /", equivalent},
+		{"GET /", "POST /", disjoint},
+		{"GET /", "/", moreSpecific},
+		{"HEAD /", "/", moreSpecific},
+		{"GET /", "HEAD /", moreGeneral},
+	} {
+		pat1 := mustParse(t, test.p1)
+		pat2 := mustParse(t, test.p2)
+		got := pat1.compareMethods(pat2)
+		if got != test.want {
+			t.Errorf("%s vs %s: got %s, want %s", test.p1, test.p2, got, test.want)
+		}
+		got2 := pat2.compareMethods(pat1)
+		want2 := inverseRelationship(test.want)
+		if got2 != want2 {
+			t.Errorf("%s vs %s: got %s, want %s", test.p2, test.p1, got2, want2)
+		}
+	}
+}
+
 func TestComparePaths(t *testing.T) {
 	for _, test := range []struct {
 		p1, p2 string
@@ -287,19 +315,22 @@ func TestComparePaths(t *testing.T) {
 		if got != test.want {
 			t.Errorf("%s vs %s: got %s, want %s", test.p1, test.p2, got, test.want)
 		}
-		var want2 relationship
-		switch test.want {
-		case moreSpecific:
-			want2 = moreGeneral
-		case moreGeneral:
-			want2 = moreSpecific
-		default:
-			want2 = test.want
-		}
+		want2 := inverseRelationship(test.want)
 		got2 := pat2.comparePaths(pat1)
 		if got2 != want2 {
 			t.Errorf("%s vs %s: got %s, want %s", test.p2, test.p1, got2, want2)
 		}
+	}
+}
+
+func inverseRelationship(r relationship) relationship {
+	switch r {
+	case moreSpecific:
+		return moreGeneral
+	case moreGeneral:
+		return moreSpecific
+	default:
+		return r
 	}
 }
 
@@ -391,6 +422,7 @@ func TestHigherPrecedence(t *testing.T) {
 		{"GET /", "POST /", false},
 		{"GET /", "/foo", false},
 		{"/foo", "GET /", false},
+		{"HEAD /", "GET /", true},
 
 		// 3. more specific path
 		{"/", "/", false},
@@ -454,6 +486,7 @@ func TestConflictsWith(t *testing.T) {
 		{"/", "GET /foo", false},
 		{"GET /", "GET /foo", false},
 		{"GET /", "/foo", true},
+		{"GET /foo", "HEAD /", true},
 	} {
 		pat1 := mustParse(t, test.p1)
 		pat2 := mustParse(t, test.p2)
@@ -509,6 +542,8 @@ func TestDescribeRelationship(t *testing.T) {
 		{"/a/{x}", "/a/{y}", "matches the same"},
 		{"/a/{x}", "/{y}/b", "neither is more specific"},
 		{"GET /", "/", "is more specific than"},
+		{"GET /", "HEAD /", "is more specific than"},
+		{"GET /", "HEAD /", "matches \"GET"},
 		{"/foo", "/", "is more specific than"},
 		{"/", "GET /", "is more specific than"},
 		{"/", "/foo", "is more specific than"},

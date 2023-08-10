@@ -132,16 +132,25 @@ func TestNodeMatch(t *testing.T) {
 	tree := buildTree(
 		"/item/",
 		"POST /item/{user}",
+		"GET /item/{user}",
 		"/item/{user}",
 		"/item/{user}/{id}",
 		"/item/{user}/new",
 		"/item/{$}",
 		"POST alt.com/item/{user}",
+		"GET /headwins",
+		"HEAD /headwins",
 		"/path/{p...}")
 
 	test(tree, []testCase{
 		{"GET", "", "/item/jba",
-			"/item/{user}", []string{"jba"}},
+			"GET /item/{user}", []string{"jba"}},
+		{"POST", "", "/item/jba",
+			"POST /item/{user}", []string{"jba"}},
+		{"HEAD", "", "/item/jba",
+			"GET /item/{user}", []string{"jba"}},
+		{"get", "", "/item/jba",
+			"/item/{user}", []string{"jba"}}, // method matches are case-sensitive
 		{"POST", "", "/item/jba/17",
 			"/item/{user}/{id}", []string{"jba", "17"}},
 		{"GET", "", "/item/jba/new",
@@ -153,9 +162,13 @@ func TestNodeMatch(t *testing.T) {
 		{"POST", "alt.com", "/item/jba",
 			"POST alt.com/item/{user}", []string{"jba"}},
 		{"GET", "alt.com", "/item/jba",
-			"/item/{user}", []string{"jba"}},
+			"GET /item/{user}", []string{"jba"}},
 		{"GET", "", "/item",
 			"", nil}, // does not match
+		{"GET", "", "/headwins",
+			"GET /headwins", nil},
+		{"HEAD", "", "/headwins", // HEAD is more specific than GET
+			"HEAD /headwins", nil},
 		{"GET", "", "/path/to/file",
 			"/path/{p...}", []string{"to/file"}},
 	})

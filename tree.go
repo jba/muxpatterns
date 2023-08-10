@@ -120,7 +120,13 @@ func (n *node) matchMethodAndPath(method, path string) (*node, []string) {
 			return p, m
 		}
 	} else if p, m := n.findChild(method).matchPath(path, nil); p != nil {
+		// Exact match of method name.
 		return p, m
+	} else if method == "HEAD" {
+		// GET matches HEAD too.
+		if p, m := n.findChild("GET").matchPath(path, nil); p != nil {
+			return p, m
+		}
 	}
 	return n.emptyChild.matchPath(path, nil)
 }

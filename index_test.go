@@ -14,11 +14,34 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+func TestIndex(t *testing.T) {
+	pats := []string{"HEAD /"}
+
+	var patterns []*Pattern
+	idx := newIndex()
+	for _, p := range pats {
+		pat := mustParse(t, p)
+		patterns = append(patterns, pat)
+		idx.addPattern(pat)
+	}
+
+	compare := func(pat *Pattern) {
+		t.Helper()
+		got := indexConflicts(pat, idx)
+		want := trueConflicts(pat, patterns)
+		if !slices.Equal(got, want) {
+			t.Errorf("%q:\ngot  %s\nwant %s", pat, got, want)
+		}
+	}
+
+	compare(mustParse(t, "GET /foo"))
+}
+
 // This test works by comparing possiblyConflictingPatterns with
 // an exhaustive loop through all patterns.
 func FuzzIndex(f *testing.F) {
 	inits := []string{"/a", "/a/b", "/{x0}", "/{x0}/b", "/a/{x0}", "/a/{$}", "/a/b/{$}",
-		"/a/", "/a/b/", "/{x}/b/c/{$}", "GET /{x0}/"}
+		"/a/", "/a/b/", "/{x}/b/c/{$}", "GET /{x0}/", "HEAD /a"}
 
 	var patterns []*Pattern
 	idx := newIndex()

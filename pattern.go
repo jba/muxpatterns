@@ -300,9 +300,17 @@ func (p1 *Pattern) compareMethods(p2 *Pattern) relationship {
 		return equivalent
 	}
 	if p1.method == "" {
+		// p1 matches any method, but p2 does not.
 		return moreGeneral
 	}
 	if p2.method == "" {
+		return moreSpecific
+	}
+	if p1.method == "GET" && p2.method == "HEAD" {
+		// p1 matches GET and HEAD; p2 matches only HEAD.
+		return moreGeneral
+	}
+	if p2.method == "GET" && p1.method == "HEAD" {
 		return moreSpecific
 	}
 	return disjoint
@@ -452,13 +460,13 @@ func moreSpecificMessage(spec, gen *Pattern, methodRel relationship) string {
 	// Either the method or path is more specific, or both.
 	over := matchingPath(spec)
 	if methodRel == moreSpecific {
-		// spec.method is not empty, gen.method is.
+		// spec.method is not empty, gen.method is empty or is GET.
 		return fmt.Sprintf(`%q is more specific than %q.
 Both match "%s %s".
 Only %[2]s matches "%[5]s %s".`,
 			spec, gen,
 			spec.method, over,
-			otherMethod(spec.method), over)
+			otherMethod(spec.method, gen.method), over)
 	}
 	diff := differencePath(gen, spec)
 	return fmt.Sprintf(`%s is more specific than %s.
@@ -507,10 +515,13 @@ func commonPath(p1, p2 *Pattern) string {
 	return b.String()
 }
 
-func otherMethod(method string) string {
-	i := slices.Index(methods, method)
+func otherMethod(specMethod, genMethod string) string {
+	i := slices.Index(methods, specMethod)
 	if i < 0 {
-		return "BADMETHOD"
+		return "NON-STANDARD-METHOD"
+	}
+	if specMethod == "HEAD" && genMethod == "GET" {
+		return "GET"
 	}
 	return methods[(i+1)%len(methods)]
 }
