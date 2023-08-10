@@ -28,7 +28,7 @@ type ServeMux struct {
 	tree *node
 	// Temporary hack to expose pattern matches.
 	// This grows without bound!
-	matches       map[*http.Request]match
+	matches       map[*http.Request]*match
 	conflictCalls atomic.Int32
 	index         *index
 }
@@ -36,7 +36,7 @@ type ServeMux struct {
 func NewServeMux() *ServeMux {
 	return &ServeMux{
 		tree:    &node{},
-		matches: map[*http.Request]match{},
+		matches: map[*http.Request]*match{},
 		index:   newIndex(),
 	}
 }
@@ -113,7 +113,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h, pat, _, matches := mux.handler(r)
 	if pat != nil && matches != nil {
 		mux.mu.Lock()
-		mux.matches[r] = match{pat, matches}
+		mux.matches[r] = &match{pat: pat, values: matches}
 		mux.mu.Unlock()
 	}
 	h.ServeHTTP(w, r)
@@ -276,36 +276,55 @@ func exactMatch(n *node, path string) bool {
 func (mux *ServeMux) PathValue(r *http.Request, name string) string {
 	mux.mu.RLock()
 	defer mux.mu.RUnlock()
-	if m, ok := mux.matches[r]; ok {
-		if i := m.lookup(name); i >= 0 {
-			return m.values[i]
-		}
-	}
-	return ""
+	return mux.matches[r].get(name)
 }
 
 // SetPathValue sets the value for path element name in r.
-// If there is no matched wildcard with the name, SetPathValue
-// does nothing.
 //
 // This is a method on ServeMux only for demo purposes.
 // In the actual implementation, it will be a method on Request.
 func (mux *ServeMux) SetPathValue(r *http.Request, name, value string) {
 	mux.mu.Lock()
 	defer mux.mu.Unlock()
-	if m, ok := mux.matches[r]; ok {
-		if i := m.lookup(name); i >= 0 {
-			m.values[i] = value
-		}
+	m, ok := mux.matches[r]
+	if !ok {
+		m = &match{}
+		mux.matches[r] = m
 	}
+	m.set(name, value)
 }
 
 type match struct {
 	pat    *Pattern
 	values []string
+	other  map[string]string // for calls to SetPathValue that don't match a wildcard
 }
 
-func (m match) lookup(name string) int {
+func (m *match) get(name string) string {
+	if m == nil {
+		return ""
+	}
+	if i := m.index(name); i >= 0 {
+		return m.values[i]
+	}
+	return m.other[name]
+}
+
+func (m *match) set(name, value string) {
+	if i := m.index(name); i >= 0 {
+		m.values[i] = value
+		return
+	}
+	if m.other == nil {
+		m.other = map[string]string{}
+	}
+	m.other[name] = value
+}
+
+func (m *match) index(name string) int {
+	if m.pat == nil {
+		return -1
+	}
 	i := 0
 	for _, seg := range m.pat.segments {
 		if seg.wild && seg.s != "" {

@@ -159,15 +159,18 @@ func TestPathValue(t *testing.T) {
 func TestSetPathValue(t *testing.T) {
 	mux := NewServeMux()
 	mux.Handle("/a/{b}/c/{d...}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mux.SetPathValue(r, "b", "X")
-		mux.SetPathValue(r, "d", "Y")
-		mux.SetPathValue(r, "a", "ignored")
-
-		if g, w := mux.PathValue(r, "b"), "X"; g != w {
-			t.Errorf("got %q, want %q", g, w)
+		kvs := map[string]string{
+			"b": "X",
+			"d": "Y",
+			"a": "Z",
 		}
-		if g, w := mux.PathValue(r, "d"), "Y"; g != w {
-			t.Errorf("got %q, want %q", g, w)
+		for k, v := range kvs {
+			mux.SetPathValue(r, k, v)
+		}
+		for k, w := range kvs {
+			if g := mux.PathValue(r, k); g != w {
+				t.Errorf("got %q, want %q", g, w)
+			}
 		}
 	}))
 	server := httptest.NewServer(mux)
