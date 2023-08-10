@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -119,11 +120,10 @@ func Parse(s string) (*Pattern, error) {
 		rest = method
 		method = ""
 	}
-
-	p := &Pattern{str: s, method: method}
-	if method != "" && !slices.Contains(methods, method) {
-		return nil, fmt.Errorf("bad method %q; need one of %v", method, methods)
+	if method != "" && !isValidHTTPToken(method) {
+		return nil, fmt.Errorf("bad method %q", method)
 	}
+	p := &Pattern{str: s, method: method}
 
 	i := strings.IndexByte(rest, '/')
 	if i < 0 {
@@ -198,6 +198,13 @@ func Parse(s string) (*Pattern, error) {
 		}
 	}
 	return p, nil
+}
+
+var httpTokenRegexp = regexp.MustCompile("^[-0-9A-Za-z!#$%&'*+.^_`|~]+$")
+
+// See https://www.rfc-editor.org/rfc/rfc9110#section-5.6.2.
+func isValidHTTPToken(s string) bool {
+	return httpTokenRegexp.MatchString(s)
 }
 
 func isValidWildcardName(s string) bool {
