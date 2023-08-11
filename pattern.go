@@ -13,25 +13,10 @@ package muxpatterns
 import (
 	"errors"
 	"fmt"
-	"net/http"
 	"regexp"
 	"strings"
 	"unicode"
-
-	"golang.org/x/exp/slices"
 )
-
-// Valid HTTP methods.
-var methods = []string{
-	http.MethodGet,
-	http.MethodHead,
-	http.MethodPost,
-	http.MethodPut,
-	http.MethodPatch,
-	http.MethodDelete,
-	http.MethodOptions,
-	http.MethodTrace,
-}
 
 // A Pattern is something that can be matched against an HTTP request.
 type Pattern struct {
@@ -523,14 +508,14 @@ func commonPath(p1, p2 *Pattern) string {
 }
 
 func otherMethod(specMethod, genMethod string) string {
-	i := slices.Index(methods, specMethod)
-	if i < 0 {
-		return "NON-STANDARD-METHOD"
-	}
 	if specMethod == "HEAD" && genMethod == "GET" {
 		return "GET"
 	}
-	return methods[(i+1)%len(methods)]
+	// Otherwise, genMethod must be empty.
+	if specMethod == "GET" {
+		return "POST"
+	}
+	return "GET"
 }
 
 // differencePath returns a path that p1 matches and p2 doesn't.

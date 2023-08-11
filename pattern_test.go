@@ -5,6 +5,7 @@
 package muxpatterns
 
 import (
+	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
@@ -564,6 +565,7 @@ func TestDescribeRelationship(t *testing.T) {
 		{"GET /", "/", "is more specific than"},
 		{"GET /", "HEAD /", "is more specific than"},
 		{"GET /", "HEAD /", "matches \"GET"},
+		{"POST /", "/", "matches \"GET"},
 		{"/foo", "/", "is more specific than"},
 		{"/", "GET /", "is more specific than"},
 		{"/", "/foo", "is more specific than"},
@@ -571,6 +573,7 @@ func TestDescribeRelationship(t *testing.T) {
 		{"a.com/b", "b.com/b", "different hosts"},
 	} {
 		got := DescribeRelationship(test.p1, test.p2)
+		fmt.Println(got)
 		if !strings.Contains(got, test.want) {
 			t.Errorf("%s vs. %s:\ngot:\n%s\nwhich does not contain %q",
 				test.p1, test.p2, got, test.want)
