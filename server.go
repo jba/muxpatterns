@@ -8,6 +8,7 @@
 package muxpatterns
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -27,20 +28,16 @@ import (
 // It behaves like [net/http.ServeMux], but using the enhanced patterns
 // of this package.
 type ServeMux struct {
-	mu   sync.RWMutex
-	tree *node
-	// Temporary hack to expose pattern matches.
-	// This grows without bound!
-	matches       map[*http.Request]*match
+	mu            sync.RWMutex
+	tree          *node
 	conflictCalls atomic.Int32
 	index         *index
 }
 
 func NewServeMux() *ServeMux {
 	return &ServeMux{
-		tree:    &node{},
-		matches: map[*http.Request]*match{},
-		index:   newIndex(),
+		tree:  &node{},
+		index: newIndex(),
 	}
 }
 
@@ -104,6 +101,8 @@ func (mux *ServeMux) Handler(r *http.Request) (h http.Handler, pattern string) {
 	return h, sp
 }
 
+type matchKey struct{}
+
 func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// This if statement copied from net/http/server.go.
 	if r.RequestURI == "*" {
@@ -114,11 +113,11 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h, pat, _, matches := mux.handler(r)
+	var m match
 	if pat != nil && matches != nil {
-		mux.mu.Lock()
-		mux.matches[r] = &match{pat: pat, values: matches}
-		mux.mu.Unlock()
+		m = match{pat: pat, values: matches}
 	}
+	r = r.WithContext(context.WithValue(r.Context(), matchKey{}, &m))
 	h.ServeHTTP(w, r)
 }
 
@@ -286,17 +285,21 @@ func (mux *ServeMux) matchingMethods(host, path string) []string {
 	return methods
 }
 
+// PathValue calls the top-level PathValue function.
+// deprecated: use PathValue.
+func (mux *ServeMux) PathValue(r *http.Request, name string) string {
+	return PathValue(r, name)
+}
+
 // PathValue returns the value for the named path wildcard in the
 // pattern that matched the request.
 // If there is no matched wildcard with the name, PathValue returns
 // the empty string.
 //
-// This is a method on ServeMux only for demo purposes.
-// In the actual implementation, it will be a method on Request.
-func (mux *ServeMux) PathValue(r *http.Request, name string) string {
-	mux.mu.RLock()
-	defer mux.mu.RUnlock()
-	return mux.matches[r].get(name)
+// In the actual implementation, this will be a method on Request.
+func PathValue(r *http.Request, name string) string {
+	m, _ := r.Context().Value(matchKey{}).(*match)
+	return m.get(name)
 }
 
 // SetPathValue sets the value for path element name in r.
@@ -304,13 +307,7 @@ func (mux *ServeMux) PathValue(r *http.Request, name string) string {
 // This is a method on ServeMux only for demo purposes.
 // In the actual implementation, it will be a method on Request.
 func (mux *ServeMux) SetPathValue(r *http.Request, name, value string) {
-	mux.mu.Lock()
-	defer mux.mu.Unlock()
-	m, ok := mux.matches[r]
-	if !ok {
-		m = &match{}
-		mux.matches[r] = m
-	}
+	m, _ := r.Context().Value(matchKey{}).(*match)
 	m.set(name, value)
 }
 
