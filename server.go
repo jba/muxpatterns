@@ -302,11 +302,16 @@ func PathValue(r *http.Request, name string) string {
 	return m.get(name)
 }
 
+// SetPathValue calls the top-level SetPathValue function.
+// deprecated: use SetPathValue.
+func (mux *ServeMux) SetPathValue(r *http.Request, name, value string) {
+	SetPathValue(r, name, value)
+}
+
 // SetPathValue sets the value for path element name in r.
 //
-// This is a method on ServeMux only for demo purposes.
 // In the actual implementation, it will be a method on Request.
-func (mux *ServeMux) SetPathValue(r *http.Request, name, value string) {
+func SetPathValue(r *http.Request, name, value string) {
 	m, _ := r.Context().Value(matchKey{}).(*match)
 	m.set(name, value)
 }
